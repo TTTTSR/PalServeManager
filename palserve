@@ -319,6 +319,16 @@ install_palworld() {
     tee "$LOG_FILE" < "$FIFO" &
     local TEE_PID=$!
 
+    # 清理可能损坏的 Steam 缓存（解决 "Missing configuration" 错误）
+    if [ -n "$RUN_AS" ]; then
+        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo 'palworld')}"
+        local STEAM_CACHE="/home/${REAL_USER}/.local/share/Steam/appcache"
+        if [ -d "$STEAM_CACHE" ]; then
+            echo -e "${GREEN}清理 Steam 缓存: ${STEAM_CACHE}${NC}"
+            $RUN_AS rm -rf "$STEAM_CACHE"
+        fi
+    fi
+
     # 以正确的用户运行 steamcmd，输出通过管道同时显示和记录
     local start_time=$(date +%s)
     $RUN_AS $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
@@ -347,6 +357,23 @@ install_palworld() {
     local EXIT_CODE=$?
     wait "$TEE_PID" 2>/dev/null || true
     rm -f "$FIFO"
+
+    # 如果是 "Missing configuration" 错误，清理缓存后重试一次
+    if [ $EXIT_CODE -ne 0 ] && grep -q "Missing configuration" "$LOG_FILE" 2>/dev/null; then
+        echo ""
+        echo -e "${YELLOW}检测到配置缓存问题，清理后重试...${NC}"
+        if [ -n "$RUN_AS" ]; then
+            local STEAM_CACHE2="/home/${REAL_USER}/.local/share/Steam/appcache"
+            $RUN_AS rm -rf "$STEAM_CACHE2" 2>/dev/null || true
+        fi
+        mkfifo "$FIFO" 2>/dev/null || true
+        tee -a "$LOG_FILE" < "$FIFO" >/dev/null 2>&1 &
+        $RUN_AS $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
+            > "$FIFO" 2>&1
+        EXIT_CODE=$?
+        rm -f "$FIFO"
+        wait 2>/dev/null || true
+    fi
 
     if [ $EXIT_CODE -ne 0 ]; then
         echo ""
