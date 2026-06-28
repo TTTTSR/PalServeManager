@@ -6,7 +6,7 @@ sudo dpkg --add-architecture i386
 sudo apt update
 sudo apt install lib32gcc-s1 steamcmd
 ln -s /usr/games/steamcmd steamcmd
-sudo -u steam ./steamcmd +force_install_dir /home/steam/.steam/steam/steamapps/common/PalServer +login anonymous +app_update 2394010 validate +quit
+sudo -u steam ./steamcmd +login anonymous +app_update 2394010 validate +quit
 
 #拉取脚本和程序
 mkdir -p /opt/palworld-manager/logs

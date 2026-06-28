@@ -2,10 +2,8 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Config 保存所有应用配置。
@@ -95,15 +93,8 @@ func Load(path string) (*Config, error) {
 		return cfg, err
 	}
 
-	// 推导未显式设置的路径
-	if cfg.ConfigDir == "" {
-		cfg.ConfigDir = findConfigDir(cfg.PalServerDir)
-	} else {
-		// 用户指定了 ConfigDir，验证是否存在
-		if _, err := os.Stat(filepath.Join(cfg.ConfigDir, "PalWorldSettings.ini")); os.IsNotExist(err) {
-			fmt.Printf("[Config] 警告: 指定的 ConfigDir 中未找到 PalWorldSettings.ini: %s\n", cfg.ConfigDir)
-		}
-	}
+	// ConfigDir 固定为 <PalServerDir>/Pal/Saved/Config/LinuxServer
+	cfg.ConfigDir = filepath.Join(cfg.PalServerDir, "Pal", "Saved", "Config", "LinuxServer")
 	if cfg.SaveDir == "" {
 		cfg.SaveDir = filepath.Join(cfg.PalServerDir, "Pal", "Saved", "SaveGames")
 	}
@@ -123,53 +114,3 @@ func Save(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// findConfigDir 在 PalServerDir 下自动搜索 PalWorldSettings.ini 所在目录。
-func findConfigDir(palServerDir string) string {
-	// 候选路径，按优先级排列
-	candidates := []string{
-		filepath.Join(palServerDir, "Pal", "Saved", "Config", "LinuxServer"),
-		filepath.Join(palServerDir, "Pal", "Saved", "Config", "WindowsServer"),
-		filepath.Join(palServerDir, "Saved", "Config", "LinuxServer"),
-		filepath.Join(palServerDir, "Saved", "Config", "WindowsServer"),
-	}
-
-	// 先检查候选路径
-	for _, dir := range candidates {
-		iniPath := filepath.Join(dir, "PalWorldSettings.ini")
-		if _, err := os.Stat(iniPath); err == nil {
-			fmt.Printf("[Config] 自动发现配置目录: %s\n", dir)
-			return dir
-		}
-	}
-
-	// 候选路径都不存在，递归搜索（限制深度避免扫描整个游戏目录）
-	fmt.Printf("[Config] 候选路径均未找到 PalWorldSettings.ini，正在搜索 %s ...\n", palServerDir)
-	var found string
-	filepath.Walk(palServerDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || found != "" {
-			return nil
-		}
-		// 限制深度：最多 8 层
-		rel, _ := filepath.Rel(palServerDir, path)
-		if rel != "." && strings.Count(rel, string(filepath.Separator)) >= 8 {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info.Name() == "PalWorldSettings.ini" {
-			found = filepath.Dir(path)
-			fmt.Printf("[Config] 已找到配置目录: %s\n", found)
-		}
-		return nil
-	})
-
-	if found != "" {
-		return found
-	}
-
-	// 兜底：返回默认路径（后续操作会报错提示用户）
-	fallback := filepath.Join(palServerDir, "Pal", "Saved", "Config", "LinuxServer")
-	fmt.Printf("[Config] 未找到 PalWorldSettings.ini，使用默认路径: %s\n", fallback)
-	return fallback
-}
