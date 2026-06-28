@@ -91,6 +91,9 @@ install_steamcmd() {
             sudo add-apt-repository multiverse -y
             sudo dpkg --add-architecture i386
             sudo apt-get update -qq
+            # 先安装 32-bit 依赖（Valve 官方要求）
+            sudo apt-get install -y -qq lib32gcc-s1 2>/dev/null || \
+            sudo apt-get install -y -qq lib32gcc1 2>/dev/null || true
             sudo apt-get install -y -qq steamcmd || {
                 echo -e "${YELLOW}apt 安装失败，回退到手动安装${NC}"
                 install_steamcmd_manual
@@ -108,6 +111,9 @@ install_steamcmd() {
             fi
             sudo dpkg --add-architecture i386
             sudo apt-get update -qq
+            # 先安装 32-bit 依赖
+            sudo apt-get install -y -qq lib32gcc-s1 2>/dev/null || \
+            sudo apt-get install -y -qq lib32gcc1 2>/dev/null || true
             sudo apt-get install -y -qq steamcmd || {
                 echo -e "${YELLOW}apt 安装失败，回退到手动安装${NC}"
                 install_steamcmd_manual
@@ -180,6 +186,21 @@ install_steamcmd() {
 
 # 手动安装 SteamCMD（Valve 官方 tar.gz，不依赖包管理器）
 install_steamcmd_manual() {
+    # 先安装 32-bit 依赖
+    local DISTRO=$(detect_distro)
+    case "$DISTRO" in
+        ubuntu|debian|linuxmint|pop|raspbian)
+            sudo apt-get install -y -qq lib32gcc-s1 2>/dev/null || \
+            sudo apt-get install -y -qq lib32gcc1 2>/dev/null || true ;;
+        rhel|centos|rocky|almalinux|fedora)
+            if command -v dnf &>/dev/null; then
+                sudo dnf install -y glibc.i686 libstdc++.i686 2>/dev/null || true
+            else
+                sudo yum install -y glibc.i686 libstdc++.i686 2>/dev/null || true
+            fi ;;
+        arch|manjaro) sudo pacman -S --noconfirm --needed lib32-gcc-libs 2>/dev/null || true ;;
+    esac
+
     local STEAMCMD_DIR="/opt/steamcmd"
     sudo mkdir -p "$STEAMCMD_DIR"
     echo -e "${GREEN}从 Valve 官方下载 SteamCMD...${NC}"
