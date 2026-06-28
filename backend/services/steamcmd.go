@@ -184,21 +184,22 @@ func (s *SteamCMDService) IsUpdating() bool {
 }
 
 func (s *SteamCMDService) parseBuildInfo(output string) *BuildInfo {
-	re := regexp.MustCompile(`"buildid"\s*"(\d+)"`)
-	matches := re.FindStringSubmatch(output)
-	info := &BuildInfo{
-		AppID: s.appID,
-	}
-	if len(matches) >= 2 {
-		info.BuildID = matches[1]
+	info := &BuildInfo{AppID: s.appID}
+
+	// 解析 buildid: "buildid" "22460594"
+	buildRe := regexp.MustCompile(`"buildid"\s*"(\d+)"`)
+	if m := buildRe.FindStringSubmatch(output); len(m) >= 2 {
+		info.BuildID = m[1]
 	}
 
-	branchRe := regexp.MustCompile(`"branch"\s*"([^"]+)"`)
-	branchMatches := branchRe.FindStringSubmatch(output)
-	if len(branchMatches) >= 2 {
-		info.Branch = branchMatches[1]
+	// 解析分支名：在 "branches" 块中第一个非 private 的键
+	// steamcmd 输出格式: "branches" { "public" { "buildid" "..." } ... }
+	branchRe := regexp.MustCompile(`"branches"\s*\{\s*"([^"]+)"`)
+	if m := branchRe.FindStringSubmatch(output); len(m) >= 2 && m[1] != "privatebranches" {
+		info.Branch = m[1]
 	}
 
+	// 版本号不在 steamcmd 输出中，由 RefreshInfo 从 REST API 获取
 	return info
 }
 
