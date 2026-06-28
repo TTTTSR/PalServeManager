@@ -64,6 +64,7 @@ func (s *SteamCMDService) CheckForUpdate() (*BuildInfo, error) {
 	)
 
 	output, err := cmd.CombinedOutput()
+	log.Info(string(output))
 	if err != nil {
 		log.Error("检查更新失败: %v", err)
 		log.Output("steamcmd 输出", string(output))

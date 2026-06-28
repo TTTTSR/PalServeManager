@@ -312,6 +312,14 @@ func (pm *ProcessManager) GetInfo() *ProcessInfo {
 		status = StatusNotInstalled
 	}
 
+	// 检测外部启动的服务端（面板未启动它，但它在运行）
+	if installed && status == StatusStopped {
+		if pm.restClient != nil && pm.restClient.Ping() == nil {
+			status = StatusRunning
+			Log("Server").Info("检测到外部运行的服务端 (REST API)，已同步状态")
+		}
+	}
+
 	steamcmdReady := false
 	if pm.steamcmdChecker != nil {
 		steamcmdReady = pm.steamcmdChecker()
