@@ -14,3 +14,5 @@ curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/palserv
 curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/palworld-manager-linux -o /opt/palworld-manager/palworld-manager-linux
 chmod +x /opt/palworld-manager/palservemanage.sh /opt/palworld-manager/palworld-manager-linux
 chown -R steam:steam /opt/palworld-manager
+
+ln -sf /opt/palworld-manager/palservemanage.sh /usr/local/bin/palserve
