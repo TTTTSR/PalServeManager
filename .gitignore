@@ -1,6 +1,8 @@
-# Go
+# Go build artifacts
 backend/palworld-manager
 backend/palworld-manager.exe
+backend/palworld-manager-linux
+backend/palserve
 backend/config.json
 
 # IDE
