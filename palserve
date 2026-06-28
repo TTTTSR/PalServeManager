@@ -401,6 +401,32 @@ install_palworld() {
         chown -R "$REAL_USER:$REAL_USER" "$PAL_DIR" 2>/dev/null || true
     fi
 
+    # 首次启动生成配置文件
+    local CONFIG_DIR="${PAL_DIR}/Pal/Saved/Config/LinuxServer"
+    local CONFIG_FILE="${CONFIG_DIR}/PalWorldSettings.ini"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo ""
+        echo -e "${GREEN}首次启动服务器以生成配置文件...${NC}"
+        mkdir -p "$CONFIG_DIR"
+        if [ -n "$RUN_AS" ]; then
+            chown -R "$REAL_USER:$REAL_USER" "$CONFIG_DIR" 2>/dev/null || true
+        fi
+        # 后台启动 PalServer，等 15 秒生成配置后停止
+        $RUN_AS bash -c "cd '$PAL_DIR' && timeout 15 ./PalServer.sh -port=8211 -players=32" > /dev/null 2>&1 || true
+        # 手动创建默认配置（如果自动生成失败）
+        if [ ! -f "$CONFIG_FILE" ]; then
+            echo -e "${YELLOW}自动生成配置失败，创建默认配置...${NC}"
+            cat > "$CONFIG_FILE" << 'CONFEOF'
+[/Script/Pal.PalGameWorldSettings]
+OptionSettings=(ServerName="Default Palworld Server",ServerDescription="",AdminPassword="",ServerPassword="",PublicIP="",PublicPort=8211,ServerPlayerMaxNum=32,RESTAPIEnabled=True,RESTAPIPort=8212,bIsMultiplay=True,bIsPvP=False,bEnablePlayerToPlayerDamage=False,bEnableFriendlyFire=False,CoopPlayerMaxNum=4,GuildPlayerMaxNum=20,bShowPlayerList=True,Difficulty=None,DeathPenalty=All,bHardcore=False,bPalLost=False,DayTimeSpeedRate=1.000000,NightTimeSpeedRate=1.000000,ExpRate=1.000000,PalCaptureRate=1.000000,PalSpawnNumRate=1.000000,PalDamageRateAttack=1.000000,PalDamageRateDefense=1.000000,PlayerDamageRateAttack=1.000000,PlayerDamageRateDefense=1.000000,PlayerStomachDecreaceRate=1.000000,PlayerStaminaDecreaceRate=1.000000,PlayerAutoHPRegeneRate=1.000000,PlayerAutoHpRegeneRateInSleep=1.000000,PalStomachDecreaceRate=1.000000,PalStaminaDecreaceRate=1.000000,PalAutoHPRegeneRate=1.000000,PalAutoHpRegeneRateInSleep=1.000000,BuildObjectDamageRate=1.000000,BuildObjectDeteriorationDamageRate=1.000000,CollectionDropRate=1.000000,CollectionObjectHpRate=1.000000,CollectionObjectRespawnSpeedRate=1.000000,EnemyDropItemRate=1.000000,DeathPenalty=All,bEnableInvaderEnemy=True,bFastTravel=True,BaseCampMaxNum=128,BaseCampMaxNumInGuild=4,BaseCampWorkerMaxNum=15,DropItemMaxNum=3000,DropItemAliveMaxHours=1.000000,bAutoResetGuildNoOnlinePlayers=False,AutoResetGuildTimeNoOnlinePlayers=72.000000,WorkSpeedRate=1.000000,bIsUseBackupSaveData=True,bIsUseBackupSaveData_Custom=True)
+CONFEOF
+        fi
+        if [ -n "$RUN_AS" ]; then
+            chown "$REAL_USER:$REAL_USER" "$CONFIG_FILE" 2>/dev/null || true
+        fi
+        echo -e "${GREEN}配置文件已生成: ${CONFIG_FILE}${NC}"
+    fi
+
     echo ""
     echo -e "${GREEN}=== Palworld 服务端安装完成 ===${NC}"
     echo -e "${GREEN}安装目录: ${PAL_DIR}${NC}"
@@ -417,8 +443,33 @@ install_palworld() {
     echo -e "${YELLOW}  TCP 8212 (REST API 端口，用于管理面板)${NC}"
 }
 
+# === 获取运行管理面板的用户 ===
+get_run_user() {
+    if [ "$(id -u)" != "0" ]; then
+        echo ""
+        return
+    fi
+    # 优先用 sudo 原始用户，否则用 palworld 用户
+    local u="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
+    if [ -z "$u" ] || [ "$u" = "root" ]; then
+        u="palworld"
+        id "$u" &>/dev/null || useradd -m -s /bin/bash "$u" 2>/dev/null || true
+    fi
+    echo "$u"
+}
+
 # === 启动 ===
 do_start() {
+    # 检查是否以 root 运行
+    local RUN_USER=$(get_run_user)
+    if [ -n "$RUN_USER" ]; then
+        # 以非 root 用户重启自身
+        echo -e "${GREEN}切换为 ${RUN_USER} 用户启动管理面板...${NC}"
+        mkdir -p "$LOG_DIR"
+        chown -R "$RUN_USER:$RUN_USER" "$INSTALL_DIR" 2>/dev/null || true
+        exec sudo -u "$RUN_USER" "$0" start "$@"
+    fi
+
     if [ -f "$PID_FILE" ]; then
         local pid=$(cat "$PID_FILE")
         if kill -0 "$pid" 2>/dev/null; then
