@@ -14,6 +14,7 @@ BINARY_URL="${RAW_BASE}/palworld-manager-linux"
 INSTALL_DIR="/opt/palworld-manager"
 BINARY="${INSTALL_DIR}/palworld-manager-linux"
 SCRIPT_PATH="${INSTALL_DIR}/palserve"
+MANAGE_SCRIPT="${INSTALL_DIR}/palservemanage.sh"
 CONFIG="${INSTALL_DIR}/config.json"
 PID_FILE="${INSTALL_DIR}/palserve.pid"
 LOG_DIR="${INSTALL_DIR}/logs"
@@ -235,12 +236,11 @@ install_steamcmd_manual() {
 
 # === 自注册到系统 PATH ===
 register_self() {
-    # 将自身复制到安装目录
-    if [ "$(readlink -f "$0")" != "$(readlink -f "$SCRIPT_PATH")" ] 2>/dev/null; then
-        mkdir -p "$INSTALL_DIR"
-        cp "$0" "$SCRIPT_PATH"
-        chmod +x "$SCRIPT_PATH"
-    fi
+    # 将自身和 manage 脚本复制到安装目录
+    mkdir -p "$INSTALL_DIR"
+    cp "$0" "$SCRIPT_PATH"
+    cp "$(dirname "$0")/palservemanage.sh" "$MANAGE_SCRIPT" 2>/dev/null || true
+    chmod +x "$SCRIPT_PATH" "$MANAGE_SCRIPT" 2>/dev/null || true
 
     local LINK="/usr/local/bin/palserve"
     if [ "$1" = "--force" ] || [ ! -L "$LINK" ]; then
@@ -282,123 +282,27 @@ ensure_not_root() {
     if [ "$(id -u)" = "0" ]; then
         ensure_user
         echo -e "${GREEN}切换为 ${SERVICE_USER} 用户...${NC}"
-        # 确保 palworld 用户有完整 PATH
-        local PAL_PATH="/usr/local/bin:/usr/bin:/bin"
-        exec sudo -u "$SERVICE_USER" env "PATH=$PAL_PATH" "$SCRIPT_PATH" "$@"
+        exec sudo -u "$SERVICE_USER" env PATH="/usr/local/bin:/usr/bin:/bin" bash "$MANAGE_SCRIPT" "$@"
     fi
 }
 
-# === 启动 ===
+# === 管理操作（委托给 palservemanage.sh） ===
 do_start() {
-    # 拒绝 root，切换到服务用户
-    ensure_not_root "$@"
-
-    if [ -f "$PID_FILE" ]; then
-        local pid=$(cat "$PID_FILE")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo -e "${YELLOW}管理面板已在运行 (PID: $pid)${NC}"
-            return 0
-        fi
-        rm -f "$PID_FILE"
-    fi
-
-    mkdir -p "$LOG_DIR"
-
-    # 二进制不存在时自动下载
-    if [ ! -f "$BINARY" ]; then
-        download_binary
-    fi
+    [ ! -f "$BINARY" ] && download_binary
     chmod +x "$BINARY"
-
-    local DAEMON_MODE=false
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -d|--daemon) DAEMON_MODE=true; shift ;;
-            -f|--foreground) DAEMON_MODE=false; shift ;;
-            *) shift ;;
-        esac
-    done
-
-    if $DAEMON_MODE; then
-        echo -e "${GREEN}正在后台启动管理面板...${NC}"
-        nohup "$BINARY" >> "$MAIN_LOG" 2>&1 &
-        local pid=$!
-        echo $pid > "$PID_FILE"
-        sleep 1
-        if kill -0 "$pid" 2>/dev/null; then
-            echo -e "${GREEN}管理面板已启动 (PID: $pid)${NC}"
-            echo -e "${GREEN}  访问: http://localhost:8080${NC}"
-            echo -e "${GREEN}  日志: $MAIN_LOG${NC}"
-        else
-            echo -e "${RED}启动失败，请查看日志: $MAIN_LOG${NC}"
-            rm -f "$PID_FILE"
-            exit 1
-        fi
-    else
-        echo -e "${GREEN}正在前台启动管理面板... (Ctrl+C 停止)${NC}"
-        echo -e "${GREEN}  访问: http://localhost:8080${NC}"
-        exec "$BINARY"
-    fi
+    ensure_not_root "start"
 }
 
-# === 停止 ===
 do_stop() {
-    if [ ! -f "$PID_FILE" ]; then
-        echo -e "${YELLOW}管理面板未在运行 (无 PID 文件)${NC}"
-        local pids=$(pgrep -f "palworld-manager-linux" 2>/dev/null || true)
-        if [ -n "$pids" ]; then
-            echo -e "${YELLOW}发现相关进程: $pids，正在终止...${NC}"
-            kill $pids 2>/dev/null || true
-            echo -e "${GREEN}已终止${NC}"
-        fi
-        return 0
-    fi
-
-    local pid=$(cat "$PID_FILE")
-    if ! kill -0 "$pid" 2>/dev/null; then
-        echo -e "${YELLOW}PID $pid 已不存在，清除 PID 文件${NC}"
-        rm -f "$PID_FILE"
-        return 0
-    fi
-
-    echo -e "${YELLOW}正在停止管理面板 (PID: $pid)...${NC}"
-    kill "$pid" 2>/dev/null || true
-
-    local waited=0
-    while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    if kill -0 "$pid" 2>/dev/null; then
-        echo -e "${YELLOW}超时，强制终止...${NC}"
-        kill -9 "$pid" 2>/dev/null || true
-        sleep 1
-    fi
-
-    rm -f "$PID_FILE"
-    echo -e "${GREEN}管理面板已停止${NC}"
+    ensure_not_root "stop"
 }
 
-# === 重启 ===
 do_restart() {
-    do_stop
-    sleep 1
-    do_start --daemon
+    ensure_not_root "restart"
 }
 
-# === 更新（下载最新版本并重启） ===
 do_update() {
-    echo -e "${GREEN}正在下载最新版本...${NC}"
-    if [ -f "$PID_FILE" ]; then
-        local pid=$(cat "$PID_FILE")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo -e "${YELLOW}管理面板正在运行，将先停止...${NC}"
-            do_stop
-        fi
-    fi
-    download_binary
-    echo -e "${GREEN}更新完成！使用 palserve start -d 启动${NC}"
+    ensure_not_root "update"
 }
 
 # === 状态 ===
