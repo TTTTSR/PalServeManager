@@ -258,7 +258,7 @@ register_self() {
 }
 
 # === 服务运行用户 ===
-SERVICE_USER="palworld"
+SERVICE_USER="steam"
 
 # 确保服务用户存在
 ensure_user() {
@@ -364,6 +364,7 @@ do_install() {
     # 确保安装目录归服务用户所有
     mkdir -p "$INSTALL_DIR" "$LOG_DIR"
     chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" 2>/dev/null || true
+    chown -R "$SERVICE_USER:$SERVICE_USER" /opt/palworld 2>/dev/null || true
 
     echo -e "${GREEN}=== PalServeManager 一键部署 ===${NC}"
     echo ""

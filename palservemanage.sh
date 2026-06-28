@@ -1,6 +1,13 @@
 #!/bin/bash
-# palservemanage — 服务管理入口，仅供 palserve 内部调用
+# palservemanage — 服务管理入口，所有操作以 steam 用户执行
 set -e
+
+SERVICE_USER="steam"
+
+# 若非 steam 用户，切换后重新执行
+if [ "$(whoami)" != "$SERVICE_USER" ]; then
+    exec sudo -u "$SERVICE_USER" env PATH="/usr/local/bin:/usr/bin:/bin" bash "$0" "$@"
+fi
 
 INSTALL_DIR="/opt/palworld-manager"
 BINARY="${INSTALL_DIR}/palworld-manager-linux"
