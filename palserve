@@ -271,18 +271,23 @@ install_palworld() {
     local STEAMCMD=$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)
     echo -e "${GREEN}SteamCMD: ${STEAMCMD}${NC}"
 
-    # 检查 root — 创建 palworld 用户，仅 steamcmd 以该用户运行
+    # 检查 root — steamcmd 禁止 root 运行，获取真实用户
     local RUN_AS=""
-    local PAL_USER="palworld"
     if [ "$(id -u)" = "0" ]; then
-        if ! id "$PAL_USER" &>/dev/null; then
-            echo -e "${GREEN}创建专用用户: ${PAL_USER}${NC}"
-            useradd -m -s /bin/bash "$PAL_USER"
+        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
+        if [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ]; then
+            # 没有 sudo 上下文，创建 palworld 用户
+            REAL_USER="palworld"
+            if ! id "$REAL_USER" &>/dev/null; then
+                echo -e "${GREEN}创建专用用户: ${REAL_USER}${NC}"
+                useradd -m -s /bin/bash "$REAL_USER"
+            fi
+        else
+            echo -e "${GREEN}steamcmd 将以 ${REAL_USER} 用户运行 (原 sudo 用户)${NC}"
         fi
         mkdir -p "$PAL_DIR" "$LOG_DIR"
-        chown -R "$PAL_USER:$PAL_USER" "$PAL_DIR" "$LOG_DIR" 2>/dev/null || true
-        echo -e "${GREEN}steamcmd 将以 ${PAL_USER} 用户运行${NC}"
-        RUN_AS="sudo -u $PAL_USER"
+        chown -R "$REAL_USER:$REAL_USER" "$PAL_DIR" "$LOG_DIR" 2>/dev/null || true
+        RUN_AS="sudo -u $REAL_USER"
     fi
 
     # 确认是否已安装
@@ -363,9 +368,10 @@ install_palworld() {
     fi
 
     chmod +x "${PAL_DIR}/PalServer.sh"
-    # 确保 palworld 用户拥有完整权限
+    # 确保服务端目录权限归正确用户所有
     if [ -n "$RUN_AS" ]; then
-        chown -R palworld:palworld "$PAL_DIR" 2>/dev/null || true
+        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo 'palworld')}"
+        chown -R "$REAL_USER:$REAL_USER" "$PAL_DIR" 2>/dev/null || true
     fi
 
     echo ""
