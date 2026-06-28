@@ -24,6 +24,7 @@ const (
 	StatusStopping     ServerStatus = "stopping"
 	StatusNotInstalled ServerStatus = "not_installed"
 	StatusInstalling   ServerStatus = "installing"
+	StatusUpdating     ServerStatus = "updating"
 	StatusError        ServerStatus = "error"
 )
 
@@ -89,11 +90,11 @@ func (pm *ProcessManager) Start() error {
 		return fmt.Errorf("server is not installed. Please install the server first")
 	}
 
-	if pm.status == StatusRunning {
-		return fmt.Errorf("server is already running (PID: %d)", pm.pid)
+	if !allowedTransitions[pm.status][StatusStarting] {
+		return fmt.Errorf("当前状态 %s 不允许启动", pm.status)
 	}
 
-	pm.status = StatusStarting
+	pm.setStatus(StatusStarting)
 
 	binaryPath := filepath.Join(pm.palServerDir, pm.palServerBinary)
 	args := []string{
@@ -122,7 +123,7 @@ func (pm *ProcessManager) Start() error {
 	logPath := filepath.Join(palLogDir, fmt.Sprintf("server-%s.log", time.Now().Format("2006-01-02-150405")))
 	palLogFile, err := os.Create(logPath)
 	if err != nil {
-		pm.status = StatusError
+		pm.setStatus(StatusError)
 		log.Error("创建日志文件失败: %v", err)
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
@@ -134,7 +135,7 @@ func (pm *ProcessManager) Start() error {
 	consoleFile, err := os.OpenFile(consolePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		palLogFile.Close()
-		pm.status = StatusError
+		pm.setStatus(StatusError)
 		log.Error("创建控制台日志文件失败: %v", err)
 		return fmt.Errorf("failed to create console log: %w", err)
 	}
@@ -147,7 +148,7 @@ func (pm *ProcessManager) Start() error {
 	pm.cmd.Stderr = io.MultiWriter(palLogFile, consoleFile)
 
 	if err := pm.cmd.Start(); err != nil {
-		pm.status = StatusError
+		pm.setStatus(StatusError)
 		palLogFile.Close()
 		consoleFile.Close()
 		log.Error("启动失败: %v", err)
@@ -157,7 +158,7 @@ func (pm *ProcessManager) Start() error {
 	pm.pid = pm.cmd.Process.Pid
 	now := time.Now()
 	pm.startTime = &now
-	pm.status = StatusRunning
+	pm.setStatus(StatusRunning)
 
 	log.Info("服务器启动成功 (PID: %d, 端口: %d, 最大玩家: %d)", pm.pid, pm.serverPort, pm.maxPlayers)
 
@@ -175,11 +176,11 @@ func (pm *ProcessManager) Start() error {
 		if pm.status == StatusRunning {
 			if err != nil {
 				log.Error("服务器进程异常退出 (PID: %d): %v", pm.pid, err)
-				pm.status = StatusError
+				pm.setStatus(StatusError)
 				BroadcastStatusGlobal("error")
 			} else {
 				log.Info("服务器进程正常退出 (PID: %d)", pm.pid)
-				pm.status = StatusStopped
+				pm.setStatus(StatusStopped)
 				BroadcastStatusGlobal("stopped")
 			}
 			pm.pid = 0
@@ -202,16 +203,16 @@ func (pm *ProcessManager) Stop() error {
 
 	log := Log("Server")
 
-	if pm.status != StatusRunning {
+	if !allowedTransitions[pm.status][StatusStopping] {
 		pm.mu.Unlock()
-		return fmt.Errorf("server is not running")
+		return fmt.Errorf("当前状态 %s 不允许停止", pm.status)
 	}
 
 	log.Info("正在停止服务器 (PID: %d)...", pm.pid)
-	pm.status = StatusStopping
+	pm.setStatus(StatusStopping)
 
 	if pm.cmd == nil || pm.cmd.Process == nil {
-		pm.status = StatusStopped
+		pm.setStatus(StatusStopped)
 		pm.mu.Unlock()
 		log.Info("服务器已停止（无活动进程）")
 		return nil
@@ -246,7 +247,7 @@ func (pm *ProcessManager) Stop() error {
 	if !restUsed {
 		if err := signalProcess(cmd.Process, os.Interrupt); err != nil {
 			pm.mu.Lock()
-			pm.status = StatusStopped
+			pm.setStatus(StatusStopped)
 			pm.pid = 0
 			pm.mu.Unlock()
 			log.Info("服务器已停止")
@@ -276,7 +277,7 @@ func (pm *ProcessManager) Stop() error {
 	}
 
 	pm.mu.Lock()
-	pm.status = StatusStopped
+	pm.setStatus(StatusStopped)
 	pm.pid = 0
 	pm.cmd = nil
 	pm.mu.Unlock()
@@ -355,14 +356,14 @@ func (pm *ProcessManager) IsInstalled() bool {
 func (pm *ProcessManager) SetInstalling() {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.status = StatusInstalling
+	pm.setStatus(StatusInstalling)
 }
 
 // SetInstalled 在安装完成后更新状态。
 func (pm *ProcessManager) SetInstalled() {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.status = StatusStopped
+	pm.setStatus(StatusStopped)
 }
 
 // SetSteamCMDChecker 设置 SteamCMD 检测回调。
@@ -564,6 +565,12 @@ func (pm *ProcessManager) runHealthChecks(gamePort int, restClient *RestAPIClien
 	} else {
 		log.Error("=== 检查完成: %d 通过, %d 失败 (%d 项) ===", pass, fail, total)
 	}
+}
+
+func (pm *ProcessManager) setStatus(s ServerStatus) {
+	pm.status = s
+	Log("Server").Info("状态: %s", s)
+	go BroadcastStatusGlobal(string(s))
 }
 
 func formatDuration(d time.Duration) string {
