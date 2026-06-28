@@ -257,32 +257,39 @@ register_self() {
     fi
 }
 
-# === 获取运行管理面板的用户 ===
-get_run_user() {
-    if [ "$(id -u)" != "0" ]; then
-        echo ""
-        return
+# === 服务运行用户 ===
+SERVICE_USER="palworld"
+
+# 确保服务用户存在
+ensure_user() {
+    if ! id "$SERVICE_USER" &>/dev/null; then
+        echo -e "${GREEN}创建服务用户: ${SERVICE_USER}${NC}"
+        useradd -r -m -s /bin/bash "$SERVICE_USER"
     fi
-    # 优先用 sudo 原始用户，否则用 palworld 用户
-    local u="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
-    if [ -z "$u" ] || [ "$u" = "root" ]; then
-        u="palworld"
-        id "$u" &>/dev/null || useradd -m -s /bin/bash "$u" 2>/dev/null || true
+}
+
+# 以服务用户身份执行命令
+run_as_service() {
+    if [ "$(id -u)" = "0" ] && [ "$(whoami)" != "$SERVICE_USER" ]; then
+        sudo -u "$SERVICE_USER" "$@"
+    else
+        "$@"
     fi
-    echo "$u"
+}
+
+# 检查并切换到服务用户（用于长时间运行的命令）
+ensure_not_root() {
+    if [ "$(id -u)" = "0" ]; then
+        ensure_user
+        echo -e "${GREEN}切换为 ${SERVICE_USER} 用户...${NC}"
+        exec sudo -u "$SERVICE_USER" "$0" "$@"
+    fi
 }
 
 # === 启动 ===
 do_start() {
-    # 检查是否以 root 运行
-    local RUN_USER=$(get_run_user)
-    if [ -n "$RUN_USER" ]; then
-        # 以非 root 用户重启自身
-        echo -e "${GREEN}切换为 ${RUN_USER} 用户启动管理面板...${NC}"
-        mkdir -p "$LOG_DIR"
-        chown -R "$RUN_USER:$RUN_USER" "$INSTALL_DIR" 2>/dev/null || true
-        exec sudo -u "$RUN_USER" "$0" start "$@"
-    fi
+    # 拒绝 root，切换到服务用户
+    ensure_not_root "$@"
 
     if [ -f "$PID_FILE" ]; then
         local pid=$(cat "$PID_FILE")
@@ -445,8 +452,12 @@ do_install() {
     local FORCE=false
     [ "$1" = "--force" ] && FORCE=true
 
-    # 清除残留的 /tmp/dumps（避免 steamcmd 权限错误）
-    rm -rf /tmp/dumps 2>/dev/null || true
+    # 0. 创建服务用户
+    echo -e "${GREEN}[0/3] 创建服务用户${NC}"
+    ensure_user
+    # 确保安装目录归服务用户所有
+    mkdir -p "$INSTALL_DIR" "$LOG_DIR"
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" 2>/dev/null || true
 
     echo -e "${GREEN}=== PalServeManager 一键部署 ===${NC}"
     echo ""
