@@ -326,19 +326,23 @@ INNER_INSTALL
         > "$LOG_FILE" 2>&1 &
     local CMD_PID=$!
 
-    # 显示进度指示器
+    # 显示进度指示器（从 steamcmd 日志中解析进度百分比）
     local SPIN='-\|/'
     local i=0
     local start_time=$(date +%s)
+    local last_pct=""
     while kill -0 "$CMD_PID" 2>/dev/null; do
         local elapsed=$(($(date +%s) - start_time))
-        local disk_usage=""
-        if [ -d "$PAL_DIR" ]; then
-            disk_usage=$(du -sh "$PAL_DIR" 2>/dev/null | cut -f1)
-            [ -n "$disk_usage" ] && disk_usage=" (已下载: ${disk_usage})"
+        local pct=""
+        # steamcmd 进度格式: "Update state (0x61) downloading, progress: 12.34 (...)"
+        if [ -f "$LOG_FILE" ]; then
+            pct=$(grep -oP 'progress:\s*\K[\d.]+' "$LOG_FILE" 2>/dev/null | tail -1)
+            [ -n "$pct" ] && last_pct="$pct"
         fi
+        local info=""
+        [ -n "$last_pct" ] && info="  进度: ${last_pct}%"
         printf "\r${GREEN}  安装中... %s  已用时: %dm%ds%s${NC}" \
-            "${SPIN:$((i % 4)):1}" $((elapsed / 60)) $((elapsed % 60)) "$disk_usage"
+            "${SPIN:$((i % 4)):1}" $((elapsed / 60)) $((elapsed % 60)) "$info"
         i=$((i + 1))
         sleep 1
     done
