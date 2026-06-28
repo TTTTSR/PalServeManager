@@ -271,30 +271,18 @@ install_palworld() {
     local STEAMCMD=$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)
     echo -e "${GREEN}SteamCMD: ${STEAMCMD}${NC}"
 
-    # 检查 root — 自动创建 palworld 用户并切换
+    # 检查 root — 创建 palworld 用户，仅 steamcmd 以该用户运行
+    local RUN_AS=""
+    local PAL_USER="palworld"
     if [ "$(id -u)" = "0" ]; then
-        local PAL_USER="palworld"
         if ! id "$PAL_USER" &>/dev/null; then
             echo -e "${GREEN}创建专用用户: ${PAL_USER}${NC}"
-            useradd -r -m -s /bin/bash "$PAL_USER"
+            useradd -m -s /bin/bash "$PAL_USER"
         fi
-        # 确保安装目录权限
-        mkdir -p "$PAL_DIR"
-        chown -R "$PAL_USER:$PAL_USER" "$(dirname "$PAL_DIR")" 2>/dev/null || true
-        echo -e "${GREEN}切换为 ${PAL_USER} 用户执行安装...${NC}"
-        # 确保 palworld 用户能写入日志目录
-        chmod 777 "$LOG_DIR" 2>/dev/null || true
-        sudo -u "$PAL_USER" bash << INNER_INSTALL
-set -e
-export PATH="/usr/local/bin:/usr/bin:/bin:\$PATH"
-$(declare -f install_palworld)
-$(declare -f detect_distro)
-LOG_DIR="$LOG_DIR"
-install_palworld "$PAL_DIR"
-INNER_INSTALL
-        # 恢复安装目录权限（可能被 steamcmd 改成 root）
-        chown -R "$PAL_USER:$PAL_USER" "$PAL_DIR" 2>/dev/null || true
-        return $?
+        mkdir -p "$PAL_DIR" "$LOG_DIR"
+        chown -R "$PAL_USER:$PAL_USER" "$PAL_DIR" "$LOG_DIR" 2>/dev/null || true
+        echo -e "${GREEN}steamcmd 将以 ${PAL_USER} 用户运行${NC}"
+        RUN_AS="sudo -u $PAL_USER"
     fi
 
     # 确认是否已安装
@@ -326,9 +314,9 @@ INNER_INSTALL
     tee "$LOG_FILE" < "$FIFO" &
     local TEE_PID=$!
 
-    # 前台运行 steamcmd（和手动命令完全一致），输出写入管道
+    # 以正确的用户运行 steamcmd，输出通过管道同时显示和记录
     local start_time=$(date +%s)
-    $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
+    $RUN_AS $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
         > "$FIFO" 2>&1 &
     local CMD_PID=$!
 
@@ -368,13 +356,17 @@ INNER_INSTALL
         exit 1
     fi
 
-    # 验证安装
+    # 验证安装并修复权限
     if [ ! -f "${PAL_DIR}/PalServer.sh" ]; then
         echo -e "${RED}安装失败: 未找到 PalServer.sh${NC}"
         exit 1
     fi
 
     chmod +x "${PAL_DIR}/PalServer.sh"
+    # 确保 palworld 用户拥有完整权限
+    if [ -n "$RUN_AS" ]; then
+        chown -R palworld:palworld "$PAL_DIR" 2>/dev/null || true
+    fi
 
     echo ""
     echo -e "${GREEN}=== Palworld 服务端安装完成 ===${NC}"
