@@ -1,8 +1,24 @@
-# 🦊 幻兽帕鲁服务器管理面板 (Palworld Server Manager)
+# 幻兽帕鲁服务器管理面板 (Palworld Server Manager)
 
 一个完整的幻兽帕鲁 (Palworld) 专用服务器 Web 管理面板，支持服务器监控、配置编辑、启停控制、自动/手动更新、定时重启等功能。
 
-## ✨ 功能特性
+## 一键部署
+
+在 Linux 服务器上执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/palserve | sudo bash -s -- install
+```
+
+部署完成后启动：
+
+```bash
+palserve start -d
+```
+
+访问 `http://<服务器IP>:8080` 进入管理面板。
+
+## 功能特性
 
 - **📊 实时监控仪表盘** — 系统资源（CPU/内存/磁盘）和服务器进程监控，在线玩家统计
 - **🎮 服务器控制** — 启动、停止、重启服务器，使用 Palworld 官方 REST API (RCON 已弃用)

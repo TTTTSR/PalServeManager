@@ -1,0 +1,586 @@
+#!/bin/bash
+# ============================================================
+# palserve — Palworld Server Manager
+# 用法: palserve {start|stop|restart|status|log|update|install}
+# ============================================================
+set -e
+
+# === GitHub 配置 ===
+RAW_BASE="https://raw.githubusercontent.com/TTTTSR/PalServeManager/main"
+SCRIPT_URL="${RAW_BASE}/palserve"
+BINARY_URL="${RAW_BASE}/palworld-manager-linux"
+
+# === 路径配置 ===
+INSTALL_DIR="/opt/palworld-manager"
+BINARY="${INSTALL_DIR}/palworld-manager-linux"
+SCRIPT_PATH="${INSTALL_DIR}/palserve"
+CONFIG="${INSTALL_DIR}/config.json"
+PID_FILE="${INSTALL_DIR}/palserve.pid"
+LOG_DIR="${INSTALL_DIR}/logs"
+MAIN_LOG="${LOG_DIR}/manager.log"
+
+# === 颜色 ===
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# === 下载二进制 ===
+download_binary() {
+    echo -e "${GREEN}正在从 GitHub 下载 palworld-manager-linux ...${NC}"
+    mkdir -p "$INSTALL_DIR"
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$BINARY_URL" -o "${BINARY}.tmp"
+    elif command -v wget &>/dev/null; then
+        wget -q "$BINARY_URL" -O "${BINARY}.tmp"
+    else
+        echo -e "${RED}错误: 需要 curl 或 wget 来下载文件${NC}"
+        exit 1
+    fi
+    chmod +x "${BINARY}.tmp"
+    mv "${BINARY}.tmp" "$BINARY"
+    echo -e "${GREEN}已下载: $BINARY${NC}"
+}
+
+# === 检测 Linux 发行版 ===
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "$ID"
+    else
+        echo "unknown"
+    fi
+}
+
+detect_version() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "${VERSION_ID:-unknown}"
+    else
+        echo "unknown"
+    fi
+}
+
+# === 安装 SteamCMD ===
+# 参考: https://developer.valvesoftware.com/wiki/SteamCMD
+install_steamcmd() {
+    local STEAMCMD_BIN=""
+    # 已安装则跳过
+    if command -v steamcmd &>/dev/null; then
+        STEAMCMD_BIN="$(which steamcmd)"
+        echo -e "${GREEN}SteamCMD 已安装: ${STEAMCMD_BIN}${NC}"
+        echo -e "${GREEN}正在初始化 SteamCMD (首次运行会自更新)...${NC}"
+        timeout 30 steamcmd +quit 2>/dev/null || true
+        return 0
+    fi
+    if [ -f "/usr/games/steamcmd" ]; then
+        STEAMCMD_BIN="/usr/games/steamcmd"
+        echo -e "${GREEN}SteamCMD 已安装: ${STEAMCMD_BIN}${NC}"
+        timeout 30 "$STEAMCMD_BIN" +quit 2>/dev/null || true
+        return 0
+    fi
+
+    local DISTRO=$(detect_distro)
+    local VERSION=$(detect_version)
+    echo -e "${GREEN}检测到系统: ${DISTRO} ${VERSION}${NC}"
+    echo -e "${GREEN}正在安装 SteamCMD...${NC}"
+
+    case "$DISTRO" in
+        ubuntu|linuxmint|pop|elementary|zorin|kubuntu|xubuntu|lubuntu)
+            echo -e "${GREEN}[Ubuntu 系] 启用 multiverse 仓库 + apt 安装${NC}"
+            sudo add-apt-repository multiverse -y
+            sudo dpkg --add-architecture i386
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq steamcmd || {
+                echo -e "${YELLOW}apt 安装失败，回退到手动安装${NC}"
+                install_steamcmd_manual
+            }
+            ;;
+
+        debian|raspbian|armbian)
+            echo -e "${GREEN}[Debian 系] 启用 non-free 仓库 + apt 安装${NC}"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq software-properties-common 2>/dev/null || true
+            # Debian 12+ 使用非自由固件源，non-free 可能已启用
+            if ! grep -q "non-free" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null; then
+                sudo apt-add-repository non-free -y 2>/dev/null || \
+                sudo sed -i 's/main/main non-free/g' /etc/apt/sources.list 2>/dev/null || true
+            fi
+            sudo dpkg --add-architecture i386
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq steamcmd || {
+                echo -e "${YELLOW}apt 安装失败，回退到手动安装${NC}"
+                install_steamcmd_manual
+            }
+            ;;
+
+        arch|manjaro|endeavouros|garuda|arcolinux)
+            # 官方只有 AUR 包，优先尝试 AUR，失败则用官方 tar.gz
+            echo -e "${GREEN}[Arch 系] 尝试 AUR 安装${NC}"
+            if command -v git &>/dev/null && command -v makepkg &>/dev/null; then
+                local TMPDIR=$(mktemp -d)
+                git clone --depth 1 https://aur.archlinux.org/steamcmd.git "$TMPDIR" 2>/dev/null && \
+                (cd "$TMPDIR" && makepkg -si --noconfirm) 2>/dev/null && \
+                echo -e "${GREEN}AUR 安装成功${NC}" || {
+                    echo -e "${YELLOW}AUR 安装失败，回退到手动安装${NC}"
+                    install_steamcmd_manual
+                }
+                rm -rf "$TMPDIR"
+            else
+                echo -e "${YELLOW}缺少 git/makepkg，使用手动安装${NC}"
+                install_steamcmd_manual
+            fi
+            ;;
+
+        rhel|centos|rocky|almalinux|fedora)
+            echo -e "${GREEN}[RHEL 系] yum install steamcmd${NC}"
+            if command -v dnf &>/dev/null; then
+                sudo dnf install -y epel-release 2>/dev/null || true
+                sudo dnf install -y steamcmd 2>/dev/null || {
+                    echo -e "${YELLOW}yum/dnf 安装失败，回退到手动安装${NC}"
+                    sudo dnf install -y glibc.i686 libstdc++.i686
+                    install_steamcmd_manual
+                }
+            elif command -v yum &>/dev/null; then
+                sudo yum install -y steamcmd 2>/dev/null || {
+                    echo -e "${YELLOW}yum 安装失败，回退到手动安装${NC}"
+                    sudo yum install -y glibc.i686 libstdc++.i686
+                    install_steamcmd_manual
+                }
+            else
+                install_steamcmd_manual
+            fi
+            ;;
+
+        *)
+            echo -e "${RED}错误: 不支持的系统发行版: ${DISTRO}${NC}"
+            echo -e "${RED}SteamCMD 官方仅支持以下 Linux 发行版:${NC}"
+            echo -e "${RED}  - Debian / Ubuntu / Mint / Pop!_OS 等 Debian 系${NC}"
+            echo -e "${RED}  - RHEL / CentOS / Rocky / AlmaLinux${NC}"
+            echo -e "${RED}  - Fedora${NC}"
+            echo -e "${RED}  - Arch / Manjaro / EndeavourOS${NC}"
+            echo -e "${RED}  - openSUSE${NC}"
+            echo -e "${RED}参考: https://developer.valvesoftware.com/wiki/SteamCMD#Linux${NC}"
+            exit 1
+            ;;
+    esac
+
+    # 验证安装
+    if command -v steamcmd &>/dev/null || [ -f "/usr/games/steamcmd" ]; then
+        STEAMCMD_BIN="$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)"
+        echo -e "${GREEN}SteamCMD 安装成功: ${STEAMCMD_BIN}${NC}"
+        echo -e "${GREEN}正在初始化 SteamCMD...${NC}"
+        timeout 30 "$STEAMCMD_BIN" +quit 2>/dev/null || true
+    else
+        echo -e "${RED}SteamCMD 安装失败。请手动安装后重试。${NC}"
+        echo -e "${RED}参考: https://developer.valvesoftware.com/wiki/SteamCMD#Linux${NC}"
+        exit 1
+    fi
+}
+
+# 手动安装 SteamCMD（Valve 官方 tar.gz，不依赖包管理器）
+install_steamcmd_manual() {
+    local STEAMCMD_DIR="/opt/steamcmd"
+    sudo mkdir -p "$STEAMCMD_DIR"
+    echo -e "${GREEN}从 Valve 官方下载 SteamCMD...${NC}"
+    local URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$URL" | sudo tar xz -C "$STEAMCMD_DIR"
+    else
+        wget -qO- "$URL" | sudo tar xz -C "$STEAMCMD_DIR"
+    fi
+    sudo ln -sf "${STEAMCMD_DIR}/steamcmd.sh" /usr/games/steamcmd
+    sudo chmod +x "$STEAMCMD_DIR/steamcmd.sh" /usr/games/steamcmd
+
+    # 验证 32-bit 依赖
+    echo -e "${GREEN}检查 32-bit 运行时依赖...${NC}"
+    if ! ldd /usr/games/steamcmd &>/dev/null 2>&1; then
+        local DISTRO=$(detect_distro)
+        echo -e "${YELLOW}缺少 32-bit 库。根据系统运行:${NC}"
+        case "$DISTRO" in
+            ubuntu|debian|linuxmint|pop|raspbian) echo -e "${YELLOW}  sudo apt install lib32gcc-s1${NC}" ;;
+            fedora|rhel|centos|rocky)             echo -e "${YELLOW}  sudo dnf install glibc.i686 libstdc++.i686${NC}" ;;
+            arch|manjaro)                          echo -e "${YELLOW}  sudo pacman -S lib32-gcc-libs${NC}" ;;
+            *)                                     echo -e "${YELLOW}  请安装 32-bit glibc 和 libstdc++${NC}" ;;
+        esac
+    else
+        echo -e "${GREEN}32-bit 依赖已就绪${NC}"
+    fi
+}
+
+# === 自注册到系统 PATH ===
+register_self() {
+    # 将自身复制到安装目录
+    if [ "$(readlink -f "$0")" != "$(readlink -f "$SCRIPT_PATH")" ] 2>/dev/null; then
+        mkdir -p "$INSTALL_DIR"
+        cp "$0" "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+    fi
+
+    local LINK="/usr/local/bin/palserve"
+    if [ "$1" = "--force" ] || [ ! -L "$LINK" ]; then
+        if [ -f "$LINK" ] && [ ! -L "$LINK" ]; then
+            echo -e "${RED}错误: $LINK 已存在且不是符号链接，请手动处理${NC}"
+            return 1
+        fi
+        sudo ln -sf "$SCRIPT_PATH" "$LINK" 2>/dev/null || {
+            echo -e "${YELLOW}警告: 无法创建 $LINK (需要 sudo 权限)${NC}"
+            echo -e "${YELLOW}手动执行: sudo ln -sf $SCRIPT_PATH /usr/local/bin/palserve${NC}"
+            return 1
+        }
+        echo -e "${GREEN}palserve 已注册到系统 PATH${NC}"
+    fi
+}
+
+# === 安装幻兽帕鲁服务端 ===
+# 参考: https://docs.palworldgame.com/guides/deploy-dedicated-server
+install_palworld() {
+    local PAL_DIR="${1:-/opt/palworld}"
+    local APP_ID="2394010"
+
+    echo -e "${GREEN}=== 安装幻兽帕鲁专用服务器 ===${NC}"
+    echo -e "${GREEN}安装目录: ${PAL_DIR}${NC}"
+    echo ""
+
+    # 检查 SteamCMD
+    if ! command -v steamcmd &>/dev/null && [ ! -f /usr/games/steamcmd ]; then
+        echo -e "${YELLOW}未检测到 SteamCMD，先进行安装...${NC}"
+        install_steamcmd
+    fi
+    local STEAMCMD=$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)
+    echo -e "${GREEN}SteamCMD: ${STEAMCMD}${NC}"
+
+    # 检查 root — 自动创建 palworld 用户并切换
+    if [ "$(id -u)" = "0" ]; then
+        local PAL_USER="palworld"
+        if ! id "$PAL_USER" &>/dev/null; then
+            echo -e "${GREEN}创建专用用户: ${PAL_USER}${NC}"
+            useradd -r -m -s /bin/bash "$PAL_USER"
+        fi
+        # 确保安装目录权限
+        mkdir -p "$PAL_DIR"
+        chown -R "$PAL_USER:$PAL_USER" "$(dirname "$PAL_DIR")" 2>/dev/null || true
+        echo -e "${GREEN}切换为 ${PAL_USER} 用户执行安装...${NC}"
+        sudo -u "$PAL_USER" bash << INNER_INSTALL
+set -e
+export PATH="/usr/local/bin:/usr/bin:/bin:\$PATH"
+$(declare -f install_palworld)
+install_palworld "$PAL_DIR"
+INNER_INSTALL
+        # 恢复安装目录权限（可能被 steamcmd 改成 root）
+        chown -R "$PAL_USER:$PAL_USER" "$PAL_DIR" 2>/dev/null || true
+        return $?
+    fi
+
+    # 确认是否已安装
+    if [ -f "${PAL_DIR}/PalServer.sh" ]; then
+        echo -e "${YELLOW}检测到 ${PAL_DIR}/PalServer.sh 已存在${NC}"
+        echo -e "${YELLOW}如需重新安装，请先删除该目录或使用 'palserve update' 更新管理面板后通过 Web 界面更新。${NC}"
+        read -p "是否覆盖安装？这将删除现有文件。(y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "$PAL_DIR"
+        else
+            echo -e "${GREEN}已取消${NC}"
+            return 0
+        fi
+    fi
+
+    # 创建目录并安装
+    mkdir -p "$PAL_DIR"
+    echo -e "${GREEN}正在通过 SteamCMD 下载 Palworld 服务端 (AppID: ${APP_ID})...${NC}"
+    echo -e "${GREEN}下载约 20GB，可能需要几分钟到十几分钟，请耐心等待...${NC}"
+    echo ""
+
+    $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit
+
+    local EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "${RED}SteamCMD 安装失败 (exit code: ${EXIT_CODE})${NC}"
+        echo -e "${RED}常见原因:${NC}"
+        echo -e "${RED}  1. 磁盘空间不足（需要约 25GB）${NC}"
+        echo -e "${RED}  2. 网络连接问题${NC}"
+        echo -e "${RED}  3. Steam 服务暂时不可用${NC}"
+        echo -e "${RED}请稍后重试或检查磁盘空间: df -h ${PAL_DIR}${NC}"
+        exit 1
+    fi
+
+    # 验证安装
+    if [ ! -f "${PAL_DIR}/PalServer.sh" ]; then
+        echo -e "${RED}安装失败: 未找到 PalServer.sh${NC}"
+        exit 1
+    fi
+
+    chmod +x "${PAL_DIR}/PalServer.sh"
+
+    echo ""
+    echo -e "${GREEN}=== Palworld 服务端安装完成 ===${NC}"
+    echo -e "${GREEN}安装目录: ${PAL_DIR}${NC}"
+    echo -e "${GREEN}启动脚本: ${PAL_DIR}/PalServer.sh${NC}"
+    echo ""
+    echo -e "${GREEN}接下来你可以:${NC}"
+    echo -e "${GREEN}  1. 通过 Web 管理面板配置服务器参数并启动${NC}"
+    echo -e "${GREEN}  2. 或直接启动: cd ${PAL_DIR} && ./PalServer.sh${NC}"
+    echo ""
+    echo -e "${YELLOW}首次运行会自动生成配置文件:${NC}"
+    echo -e "${YELLOW}  ${PAL_DIR}/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini${NC}"
+    echo -e "${YELLOW}端口要求 (确保防火墙已放行):${NC}"
+    echo -e "${YELLOW}  UDP 8211 (游戏端口)${NC}"
+    echo -e "${YELLOW}  TCP 8212 (REST API 端口，用于管理面板)${NC}"
+}
+
+# === 启动 ===
+do_start() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${YELLOW}管理面板已在运行 (PID: $pid)${NC}"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    mkdir -p "$LOG_DIR"
+
+    # 二进制不存在时自动下载
+    if [ ! -f "$BINARY" ]; then
+        download_binary
+    fi
+    chmod +x "$BINARY"
+
+    local DAEMON_MODE=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -d|--daemon) DAEMON_MODE=true; shift ;;
+            -f|--foreground) DAEMON_MODE=false; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    if $DAEMON_MODE; then
+        echo -e "${GREEN}正在后台启动管理面板...${NC}"
+        nohup "$BINARY" >> "$MAIN_LOG" 2>&1 &
+        local pid=$!
+        echo $pid > "$PID_FILE"
+        sleep 1
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${GREEN}管理面板已启动 (PID: $pid)${NC}"
+            echo -e "${GREEN}  访问: http://localhost:8080${NC}"
+            echo -e "${GREEN}  日志: $MAIN_LOG${NC}"
+        else
+            echo -e "${RED}启动失败，请查看日志: $MAIN_LOG${NC}"
+            rm -f "$PID_FILE"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}正在前台启动管理面板... (Ctrl+C 停止)${NC}"
+        echo -e "${GREEN}  访问: http://localhost:8080${NC}"
+        exec "$BINARY"
+    fi
+}
+
+# === 停止 ===
+do_stop() {
+    if [ ! -f "$PID_FILE" ]; then
+        echo -e "${YELLOW}管理面板未在运行 (无 PID 文件)${NC}"
+        local pids=$(pgrep -f "palworld-manager-linux" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            echo -e "${YELLOW}发现相关进程: $pids，正在终止...${NC}"
+            kill $pids 2>/dev/null || true
+            echo -e "${GREEN}已终止${NC}"
+        fi
+        return 0
+    fi
+
+    local pid=$(cat "$PID_FILE")
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}PID $pid 已不存在，清除 PID 文件${NC}"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+
+    echo -e "${YELLOW}正在停止管理面板 (PID: $pid)...${NC}"
+    kill "$pid" 2>/dev/null || true
+
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}超时，强制终止...${NC}"
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+
+    rm -f "$PID_FILE"
+    echo -e "${GREEN}管理面板已停止${NC}"
+}
+
+# === 重启 ===
+do_restart() {
+    do_stop
+    sleep 1
+    do_start --daemon
+}
+
+# === 更新（下载最新版本并重启） ===
+do_update() {
+    echo -e "${GREEN}正在下载最新版本...${NC}"
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${YELLOW}管理面板正在运行，将先停止...${NC}"
+            do_stop
+        fi
+    fi
+    download_binary
+    echo -e "${GREEN}更新完成！使用 palserve start -d 启动${NC}"
+}
+
+# === 状态 ===
+do_status() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            local uptime=$(ps -o etime= -p "$pid" 2>/dev/null | xargs)
+            echo -e "${GREEN}管理面板运行中${NC}"
+            echo "  PID:    $pid"
+            echo "  运行时间: ${uptime:-未知}"
+            echo "  日志:   $MAIN_LOG"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+    local pids=$(pgrep -f "palworld-manager-linux" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        echo -e "${YELLOW}发现运行中的进程 (无 PID 文件)${NC}"
+        echo "  PID:    $pids"
+        return 0
+    fi
+    echo -e "${RED}管理面板未运行${NC}"
+    return 1
+}
+
+# === 查看日志 ===
+do_log() {
+    local lines=${1:-50}
+    mkdir -p "$LOG_DIR"
+    if [ -t 0 ]; then
+        if [ -f "$MAIN_LOG" ]; then
+            echo -e "${GREEN}实时日志 ($MAIN_LOG)，Ctrl+C 退出...${NC}"
+            tail -n "$lines" -f "$MAIN_LOG"
+        elif [ -f "${LOG_DIR}/manager-$(date +%Y-%m-%d).log" ]; then
+            tail -n "$lines" -f "${LOG_DIR}/manager-$(date +%Y-%m-%d).log"
+        else
+            echo -e "${YELLOW}暂无日志文件${NC}"
+        fi
+    else
+        if [ -f "$MAIN_LOG" ]; then
+            tail -n "$lines" "$MAIN_LOG"
+        elif [ -f "${LOG_DIR}/manager-$(date +%Y-%m-%d).log" ]; then
+            tail -n "$lines" "${LOG_DIR}/manager-$(date +%Y-%m-%d).log"
+        else
+            echo -e "${YELLOW}暂无日志文件${NC}"
+        fi
+    fi
+}
+
+# === 安装（首次部署） ===
+do_install() {
+    echo -e "${GREEN}=== PalServeManager 一键部署 ===${NC}"
+    echo ""
+    # 1. 注册 PATH
+    register_self --force
+    # 2. 下载管理面板
+    download_binary
+    # 3. 安装 SteamCMD
+    echo ""
+    echo -e "${GREEN}--- 安装 SteamCMD ---${NC}"
+    install_steamcmd
+    # 4. 安装幻兽帕鲁服务端
+    echo ""
+    echo -e "${GREEN}--- 安装幻兽帕鲁服务端 ---${NC}"
+    install_palworld
+    echo ""
+    echo -e "${GREEN}=== 全部部署完成 ===${NC}"
+    echo ""
+    echo -e "${GREEN}可用命令:${NC}"
+    echo "  palserve start -d    后台启动管理面板"
+    echo "  palserve stop        停止管理面板"
+    echo "  palserve status      查看状态"
+    echo "  palserve log         查看日志"
+    echo "  palserve update      更新管理面板"
+    echo "  palserve restart     重启管理面板"
+    echo ""
+    echo -e "${GREEN}现在运行: palserve start -d${NC}"
+    echo -e "${GREEN}然后访问: http://<服务器IP>:8080${NC}"
+}
+
+# === 帮助 ===
+do_help() {
+    echo "Palworld Server Manager - palserve"
+    echo ""
+    echo "用法: palserve <命令> [选项]"
+    echo ""
+    echo "命令:"
+    echo "  start [-d]    启动管理面板 (-d 后台运行)"
+    echo "  stop          停止管理面板"
+    echo "  restart       重启管理面板"
+    echo "  status        查看运行状态"
+    echo "  log [N]       查看日志 (默认 50 行, 交互式自动 tail -f)"
+    echo "  update          从 GitHub 下载最新版本"
+    echo "  install         一键部署 (SteamCMD + 二进制 + 注册 PATH)"
+    echo "  palworld-install 安装幻兽帕鲁服务端"
+    echo "  steamcmd        单独安装/修复 SteamCMD"
+    echo "  help            显示此帮助"
+    echo ""
+    echo "示例:"
+    echo "  palserve start -d         后台启动管理面板"
+    echo "  palserve palworld-install 安装幻兽帕鲁服务端"
+    echo "  palserve log 100          查看最近 100 行日志"
+}
+
+# === 主入口 ===
+case "${1:-}" in
+    start)
+        shift
+        do_start "$@"
+        ;;
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_restart
+        ;;
+    status)
+        do_status
+        ;;
+    log)
+        do_log "${2:-50}"
+        ;;
+    update)
+        do_update
+        ;;
+    install)
+        do_install
+        ;;
+    steamcmd)
+        install_steamcmd
+        ;;
+    palworld-install)
+        install_palworld "${2:-/opt/palworld}"
+        ;;
+    help|--help|-h)
+        do_help
+        ;;
+    *)
+        if [ ! -L "/usr/local/bin/palserve" ] && [ ! -f "$BINARY" ]; then
+            echo -e "${YELLOW}首次运行，开始部署...${NC}"
+            do_install
+        else
+            do_help
+        fi
+        ;;
+esac
