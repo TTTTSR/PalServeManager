@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -150,8 +151,12 @@ func (s *SteamCMDService) Update(validate bool) (*UpdateResult, error) {
 func (s *SteamCMDService) GetInfo() *BuildInfo {
 	info := &BuildInfo{AppID: s.appID}
 
+	// 从 appmanifest 读取本地 build ID
+	if localBuild := s.parseManifestBuildID(); localBuild != "" {
+		info.BuildID = localBuild
+	}
+
 	s.mu.Lock()
-	info.BuildID = s.currentBuild
 	info.Version = s.currentVersion
 	if s.lastUpdate != nil {
 		info.LastUpdate = s.lastUpdate
@@ -204,7 +209,9 @@ func (s *SteamCMDService) parseBuildInfo(output string) *BuildInfo {
 }
 
 func (s *SteamCMDService) parseManifestBuildID() string {
-	manifestPath := fmt.Sprintf("%s/steamapps/appmanifest_%s.acf", s.serverDir, s.appID)
+	// serverDir = .../steamapps/common/PalServer → manifest 在 .../steamapps/appmanifest_xxx.acf
+	steamappsDir := filepath.Dir(filepath.Dir(s.serverDir))
+	manifestPath := filepath.Join(steamappsDir, fmt.Sprintf("appmanifest_%s.acf", s.appID))
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return ""
