@@ -85,6 +85,9 @@ install_steamcmd() {
     echo -e "${GREEN}检测到系统: ${DISTRO} ${VERSION}${NC}"
     echo -e "${GREEN}正在安装 SteamCMD...${NC}"
 
+    # 清理可能由其他用户创建的 /tmp/dumps（会导致权限警告）
+    [ -d /tmp/dumps ] && sudo rm -rf /tmp/dumps 2>/dev/null || true
+
     case "$DISTRO" in
         ubuntu|linuxmint|pop|elementary|zorin|kubuntu|xubuntu|lubuntu)
             echo -e "${GREEN}[Ubuntu 系] 启用 multiverse 仓库 + apt 安装${NC}"
