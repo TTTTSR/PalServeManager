@@ -253,196 +253,6 @@ register_self() {
     fi
 }
 
-# === 安装幻兽帕鲁服务端 ===
-# 参考: https://docs.palworldgame.com/guides/deploy-dedicated-server
-install_palworld() {
-    local PAL_DIR="${1:-/opt/palworld}"
-    local APP_ID="2394010"
-
-    echo -e "${GREEN}=== 安装幻兽帕鲁专用服务器 ===${NC}"
-    echo -e "${GREEN}安装目录: ${PAL_DIR}${NC}"
-    echo ""
-
-    # 检查 SteamCMD
-    if ! command -v steamcmd &>/dev/null && [ ! -f /usr/games/steamcmd ]; then
-        echo -e "${YELLOW}未检测到 SteamCMD，先进行安装...${NC}"
-        install_steamcmd
-    fi
-    local STEAMCMD=$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)
-    echo -e "${GREEN}SteamCMD: ${STEAMCMD}${NC}"
-
-    # 检查 root — steamcmd 禁止 root 运行，获取真实用户
-    local RUN_AS=""
-    if [ "$(id -u)" = "0" ]; then
-        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
-        if [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ]; then
-            # 没有 sudo 上下文，创建 palworld 用户
-            REAL_USER="palworld"
-            if ! id "$REAL_USER" &>/dev/null; then
-                echo -e "${GREEN}创建专用用户: ${REAL_USER}${NC}"
-                useradd -m -s /bin/bash "$REAL_USER"
-            fi
-        else
-            echo -e "${GREEN}steamcmd 将以 ${REAL_USER} 用户运行 (原 sudo 用户)${NC}"
-        fi
-        mkdir -p "$PAL_DIR" "$LOG_DIR"
-        chown -R "$REAL_USER:$REAL_USER" "$PAL_DIR" "$LOG_DIR" 2>/dev/null || true
-        RUN_AS="sudo -u $REAL_USER"
-    fi
-
-    # 确认是否已安装
-    if [ -f "${PAL_DIR}/PalServer.sh" ]; then
-        echo -e "${YELLOW}检测到 ${PAL_DIR}/PalServer.sh 已存在${NC}"
-        echo -e "${YELLOW}如需重新安装，请先删除该目录或使用 'palserve update' 更新管理面板后通过 Web 界面更新。${NC}"
-        read -p "是否覆盖安装？这将删除现有文件。(y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$PAL_DIR"
-        else
-            echo -e "${GREEN}已取消${NC}"
-            return 0
-        fi
-    fi
-
-    # 创建目录并安装
-    mkdir -p "$PAL_DIR"
-    local LOG_FILE="${LOG_DIR}/steamcmd-install.log"
-    mkdir -p "$(dirname "$LOG_FILE")"
-
-    echo -e "${GREEN}正在通过 SteamCMD 下载 Palworld 服务端 (AppID: ${APP_ID})...${NC}"
-    echo -e "${GREEN}下载约 20GB，可能需要几分钟到十几分钟${NC}"
-    echo ""
-
-    # 使用命名管道，让 steamcmd 正常前台运行同时捕获输出
-    local FIFO=$(mktemp -u)
-    mkfifo "$FIFO"
-    tee "$LOG_FILE" < "$FIFO" &
-    local TEE_PID=$!
-
-    # 清理可能损坏的 Steam 缓存（解决 "Missing configuration" 错误）
-    if [ -n "$RUN_AS" ]; then
-        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo 'palworld')}"
-        local STEAM_CACHE="/home/${REAL_USER}/.local/share/Steam/appcache"
-        if [ -d "$STEAM_CACHE" ]; then
-            echo -e "${GREEN}清理 Steam 缓存: ${STEAM_CACHE}${NC}"
-            $RUN_AS rm -rf "$STEAM_CACHE"
-        fi
-    fi
-
-    # 以正确的用户运行 steamcmd，输出通过管道同时显示和记录
-    local start_time=$(date +%s)
-    $RUN_AS $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
-        > "$FIFO" 2>&1 &
-    local CMD_PID=$!
-
-    # 显示进度指示器
-    local SPIN='-\|/'
-    local i=0
-    local last_pct="0"
-    while kill -0 "$CMD_PID" 2>/dev/null; do
-        local elapsed=$(($(date +%s) - start_time))
-        if [ -f "$LOG_FILE" ]; then
-            local line=$(tail -1 "$LOG_FILE" 2>/dev/null)
-            local pct=$(echo "$line" | grep -oP '\[\s*\K\d+(?=%\])' 2>/dev/null)
-            [ -n "$pct" ] && last_pct="$pct"
-        fi
-        printf "\r${GREEN}  安装中... %s  已用时: %dm%ds  SteamCMD: %s%%${NC}" \
-            "${SPIN:$((i % 4)):1}" $((elapsed / 60)) $((elapsed % 60)) "$last_pct"
-        i=$((i + 1))
-        sleep 1
-    done
-    printf "\r${GREEN}  安装完成，正在验证...                           ${NC}\n"
-
-    wait "$CMD_PID"
-    local EXIT_CODE=$?
-    wait "$TEE_PID" 2>/dev/null || true
-    rm -f "$FIFO"
-
-    # 如果是 "Missing configuration" 错误，清理缓存后重试一次
-    if [ $EXIT_CODE -ne 0 ] && grep -q "Missing configuration" "$LOG_FILE" 2>/dev/null; then
-        echo ""
-        echo -e "${YELLOW}检测到配置缓存问题，清理后重试...${NC}"
-        if [ -n "$RUN_AS" ]; then
-            local STEAM_CACHE2="/home/${REAL_USER}/.local/share/Steam/appcache"
-            $RUN_AS rm -rf "$STEAM_CACHE2" 2>/dev/null || true
-        fi
-        mkfifo "$FIFO" 2>/dev/null || true
-        tee -a "$LOG_FILE" < "$FIFO" >/dev/null 2>&1 &
-        $RUN_AS $STEAMCMD +force_install_dir "$PAL_DIR" +login anonymous +app_update "$APP_ID" validate +quit \
-            > "$FIFO" 2>&1
-        EXIT_CODE=$?
-        rm -f "$FIFO"
-        wait 2>/dev/null || true
-    fi
-
-    if [ $EXIT_CODE -ne 0 ]; then
-        echo ""
-        echo -e "${RED}SteamCMD 安装失败 (exit code: ${EXIT_CODE})${NC}"
-        echo -e "${RED}常见原因:${NC}"
-        echo -e "${RED}  1. 磁盘空间不足（需要约 25GB）${NC}"
-        echo -e "${RED}  2. 网络连接问题${NC}"
-        echo -e "${RED}  3. Steam 服务暂时不可用${NC}"
-        echo -e "${RED}查看详细日志: cat ${LOG_FILE}${NC}"
-        echo -e "${RED}最后 20 行日志:${NC}"
-        tail -20 "$LOG_FILE" 2>/dev/null
-        exit 1
-    fi
-
-    # 验证安装并修复权限
-    if [ ! -f "${PAL_DIR}/PalServer.sh" ]; then
-        echo -e "${RED}安装失败: 未找到 PalServer.sh${NC}"
-        exit 1
-    fi
-
-    chmod +x "${PAL_DIR}/PalServer.sh"
-    # 确保服务端目录权限归正确用户所有
-    if [ -n "$RUN_AS" ]; then
-        local REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo 'palworld')}"
-        chown -R "$REAL_USER:$REAL_USER" "$PAL_DIR" 2>/dev/null || true
-    fi
-
-    # 首次启动生成配置文件
-    local CONFIG_DIR="${PAL_DIR}/Pal/Saved/Config/LinuxServer"
-    local CONFIG_FILE="${CONFIG_DIR}/PalWorldSettings.ini"
-    if [ ! -f "$CONFIG_FILE" ]; then
-        echo ""
-        echo -e "${GREEN}首次启动服务器以生成配置文件...${NC}"
-        mkdir -p "$CONFIG_DIR"
-        if [ -n "$RUN_AS" ]; then
-            chown -R "$REAL_USER:$REAL_USER" "$CONFIG_DIR" 2>/dev/null || true
-        fi
-        # 后台启动 PalServer，等 15 秒生成配置后停止
-        $RUN_AS bash -c "cd '$PAL_DIR' && timeout 15 ./PalServer.sh -port=8211 -players=32" > /dev/null 2>&1 || true
-        # 手动创建默认配置（如果自动生成失败）
-        if [ ! -f "$CONFIG_FILE" ]; then
-            echo -e "${YELLOW}自动生成配置失败，创建默认配置...${NC}"
-            cat > "$CONFIG_FILE" << 'CONFEOF'
-[/Script/Pal.PalGameWorldSettings]
-OptionSettings=(ServerName="Default Palworld Server",ServerDescription="",AdminPassword="",ServerPassword="",PublicIP="",PublicPort=8211,ServerPlayerMaxNum=32,RESTAPIEnabled=True,RESTAPIPort=8212,bIsMultiplay=True,bIsPvP=False,bEnablePlayerToPlayerDamage=False,bEnableFriendlyFire=False,CoopPlayerMaxNum=4,GuildPlayerMaxNum=20,bShowPlayerList=True,Difficulty=None,DeathPenalty=All,bHardcore=False,bPalLost=False,DayTimeSpeedRate=1.000000,NightTimeSpeedRate=1.000000,ExpRate=1.000000,PalCaptureRate=1.000000,PalSpawnNumRate=1.000000,PalDamageRateAttack=1.000000,PalDamageRateDefense=1.000000,PlayerDamageRateAttack=1.000000,PlayerDamageRateDefense=1.000000,PlayerStomachDecreaceRate=1.000000,PlayerStaminaDecreaceRate=1.000000,PlayerAutoHPRegeneRate=1.000000,PlayerAutoHpRegeneRateInSleep=1.000000,PalStomachDecreaceRate=1.000000,PalStaminaDecreaceRate=1.000000,PalAutoHPRegeneRate=1.000000,PalAutoHpRegeneRateInSleep=1.000000,BuildObjectDamageRate=1.000000,BuildObjectDeteriorationDamageRate=1.000000,CollectionDropRate=1.000000,CollectionObjectHpRate=1.000000,CollectionObjectRespawnSpeedRate=1.000000,EnemyDropItemRate=1.000000,DeathPenalty=All,bEnableInvaderEnemy=True,bFastTravel=True,BaseCampMaxNum=128,BaseCampMaxNumInGuild=4,BaseCampWorkerMaxNum=15,DropItemMaxNum=3000,DropItemAliveMaxHours=1.000000,bAutoResetGuildNoOnlinePlayers=False,AutoResetGuildTimeNoOnlinePlayers=72.000000,WorkSpeedRate=1.000000,bIsUseBackupSaveData=True,bIsUseBackupSaveData_Custom=True)
-CONFEOF
-        fi
-        if [ -n "$RUN_AS" ]; then
-            chown "$REAL_USER:$REAL_USER" "$CONFIG_FILE" 2>/dev/null || true
-        fi
-        echo -e "${GREEN}配置文件已生成: ${CONFIG_FILE}${NC}"
-    fi
-
-    echo ""
-    echo -e "${GREEN}=== Palworld 服务端安装完成 ===${NC}"
-    echo -e "${GREEN}安装目录: ${PAL_DIR}${NC}"
-    echo -e "${GREEN}启动脚本: ${PAL_DIR}/PalServer.sh${NC}"
-    echo ""
-    echo -e "${GREEN}接下来你可以:${NC}"
-    echo -e "${GREEN}  1. 通过 Web 管理面板配置服务器参数并启动${NC}"
-    echo -e "${GREEN}  2. 或直接启动: cd ${PAL_DIR} && ./PalServer.sh${NC}"
-    echo ""
-    echo -e "${YELLOW}首次运行会自动生成配置文件:${NC}"
-    echo -e "${YELLOW}  ${PAL_DIR}/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini${NC}"
-    echo -e "${YELLOW}端口要求 (确保防火墙已放行):${NC}"
-    echo -e "${YELLOW}  UDP 8211 (游戏端口)${NC}"
-    echo -e "${YELLOW}  TCP 8212 (REST API 端口，用于管理面板)${NC}"
-}
-
 # === 获取运行管理面板的用户 ===
 get_run_user() {
     if [ "$(id -u)" != "0" ]; then
@@ -636,7 +446,7 @@ do_install() {
 
     # 1. 注册 PATH
     if [ -L /usr/local/bin/palserve ] && [ -f "$SCRIPT_PATH" ] && [ -f "$BINARY" ]; then
-        echo -e "${GREEN}[1/4] PATH 注册: 已完成，跳过${NC}"
+        echo -e "${GREEN}[1/3] PATH 注册: 已完成，跳过${NC}"
     else
         echo -e "${GREEN}[1/4] 注册 PATH${NC}"
         register_self --force
@@ -644,9 +454,9 @@ do_install() {
 
     # 2. 管理面板二进制
     if [ -f "$BINARY" ] && [ -x "$BINARY" ] && ! $FORCE; then
-        echo -e "${GREEN}[2/4] 管理面板: 已存在，跳过 (使用 --force 强制重下)${NC}"
+        echo -e "${GREEN}[2/3] 管理面板: 已存在，跳过 (使用 --force 强制重下)${NC}"
     else
-        echo -e "${GREEN}[2/4] 下载管理面板${NC}"
+        echo -e "${GREEN}[2/3] 下载管理面板${NC}"
         $FORCE && echo -e "${YELLOW}  (强制重新下载)${NC}"
         download_binary
     fi
@@ -654,20 +464,10 @@ do_install() {
     # 3. SteamCMD
     echo ""
     if command -v steamcmd &>/dev/null || [ -f /usr/games/steamcmd ]; then
-        echo -e "${GREEN}[3/4] SteamCMD: 已安装，跳过${NC}"
+        echo -e "${GREEN}[3/3] SteamCMD: 已安装，跳过${NC}"
     else
-        echo -e "${GREEN}[3/4] 安装 SteamCMD${NC}"
+        echo -e "${GREEN}[3/3] 安装 SteamCMD${NC}"
         install_steamcmd
-    fi
-
-    # 4. 幻兽帕鲁服务端
-    echo ""
-    if [ -f "/opt/palworld/PalServer.sh" ] && ! $FORCE; then
-        echo -e "${GREEN}[4/4] 幻兽帕鲁服务端: 已安装，跳过 (使用 --force 强制重装)${NC}"
-    else
-        echo -e "${GREEN}[4/4] 安装幻兽帕鲁服务端${NC}"
-        $FORCE && echo -e "${YELLOW}  (强制重新安装)${NC}"
-        install_palworld
     fi
 
     echo ""
@@ -681,7 +481,7 @@ do_install() {
     echo "  palserve update      更新管理面板"
     echo "  palserve restart     重启管理面板"
     echo ""
-    if [ -f "$BINARY" ] && (command -v steamcmd &>/dev/null || [ -f /usr/games/steamcmd ]) && [ -f "/opt/palworld/PalServer.sh" ]; then
+    if [ -f "$BINARY" ] && (command -v steamcmd &>/dev/null || [ -f /usr/games/steamcmd ]); then
         echo -e "${GREEN}现在运行: palserve start -d${NC}"
         echo -e "${GREEN}然后访问: http://<服务器IP>:8080${NC}"
     fi
@@ -701,13 +501,11 @@ do_help() {
     echo "  log [N]       查看日志 (默认 50 行, 交互式自动 tail -f)"
     echo "  update          从 GitHub 下载最新版本"
     echo "  install         一键部署 (SteamCMD + 二进制 + 注册 PATH)"
-    echo "  palworld-install 安装幻兽帕鲁服务端"
     echo "  steamcmd        单独安装/修复 SteamCMD"
     echo "  help            显示此帮助"
     echo ""
     echo "示例:"
     echo "  palserve start -d         后台启动管理面板"
-    echo "  palserve palworld-install 安装幻兽帕鲁服务端"
     echo "  palserve log 100          查看最近 100 行日志"
 }
 
@@ -737,9 +535,6 @@ case "${1:-}" in
         ;;
     steamcmd)
         install_steamcmd
-        ;;
-    palworld-install)
-        install_palworld "${2:-/opt/palworld}"
         ;;
     help|--help|-h)
         do_help
