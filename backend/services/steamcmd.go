@@ -35,8 +35,9 @@ type SteamCMDService struct {
 	appID        string
 	serverDir    string
 	lastUpdate   *time.Time
-	isUpdating   bool
-	currentBuild string
+	isUpdating     bool
+	currentBuild   string
+	currentVersion string
 }
 
 // NewSteamCMDService 创建一个新的 SteamCMDService。
@@ -150,6 +151,7 @@ func (s *SteamCMDService) GetInfo() *BuildInfo {
 
 	s.mu.Lock()
 	info.BuildID = s.currentBuild
+	info.Version = s.currentVersion
 	if s.lastUpdate != nil {
 		info.LastUpdate = s.lastUpdate
 	}
@@ -169,7 +171,7 @@ func (s *SteamCMDService) RefreshInfo(restClient *RestAPIClient) {
 	}
 
 	s.mu.Lock()
-	s.currentBuild = serverInfo.Version
+	s.currentVersion = serverInfo.Version
 	s.mu.Unlock()
 }
 

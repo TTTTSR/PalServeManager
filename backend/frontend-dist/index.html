@@ -716,7 +716,7 @@ async function checkUpdate() {
   try {
     var d = await api('/update/check');
     updateInfo = d;
-    document.getElementById('upd-current').textContent = (d.current && d.current.buildID) ? d.current.buildID : '未知';
+    document.getElementById('upd-current').textContent = (d.current && d.current.version) ? d.current.version : ((d.current && d.current.buildID) ? 'Build ' + d.current.buildID : '未知');
     document.getElementById('upd-latest').textContent = (d.latest && d.latest.buildID) ? d.latest.buildID : 'N/A';
     if (d.current) {
       var info = '分支: '+(d.current.branch||'public');
