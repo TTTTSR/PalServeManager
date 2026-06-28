@@ -7,7 +7,7 @@
 在 Linux 服务器上执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/palserve | sudo bash -s -- install
+curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/palserve -o palserve && sudo bash palserve install
 ```
 
 部署完成后启动：
