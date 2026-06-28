@@ -212,32 +212,26 @@ tr:hover{background:var(--bg)}
       <div id="sch-message"></div>
       <div class="card">
         <h2>自动重启</h2>
-        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">定期重启释放内存，防止内存泄漏。建议每 4-6 小时。</p>
+        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">定期重启释放内存，防止内存泄漏。</p>
         <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-restart-on" onchange="schChanged()"><span>启用自动重启</span></label></div>
         <div id="sch-restart-extra" style="display:none">
-          <div class="form-group"><label class="form-label">Cron 表达式</label><input type="text" id="sch-restart-cron" placeholder="0 */6 * * *" onchange="schChanged()"></div>
-          <div class="form-group" id="sch-restart-presets"></div>
+          <div class="form-group">
+            <label class="form-label">重启间隔</label>
+            <select id="sch-restart-hours" onchange="schChanged()">
+              <option value="1">每 1 小时</option><option value="2">每 2 小时</option>
+              <option value="4" selected>每 4 小时</option><option value="6">每 6 小时</option>
+              <option value="8">每 8 小时</option><option value="12">每 12 小时</option>
+              <option value="24">每 24 小时</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="card">
         <h2>自动更新</h2>
-        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">自动检查并安装更新。更新前会保存存档、停止服务器。</p>
+        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">每 30 分钟检查一次更新，若有新版本则自动更新（更新前会自动存档并停止服务器）。</p>
         <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-update-on" onchange="schChanged()"><span>启用自动更新</span></label></div>
-        <div id="sch-update-extra" style="display:none">
-          <div class="form-group"><label class="form-label">Cron 表达式</label><input type="text" id="sch-update-cron" placeholder="0 4 * * *" onchange="schChanged()"></div>
-          <div class="form-group" id="sch-update-presets"></div>
-        </div>
       </div>
-      <button class="btn btn-primary btn-lg" onclick="saveSchedule()">保存定时任务配置</button>
-      <div class="card" style="margin-top:14px">
-        <h2>Cron 表达式说明</h2>
-        <div style="font-family:monospace;font-size:.82rem;line-height:2;color:var(--text-secondary)">
-          格式: <strong>分钟 小时 日 月 星期</strong><br>
-          &bull; 分钟 (0-59) | 小时 (0-23) | 日 (1-31) | 月 (1-12) | 星期 (0-7, 0=周日)<br>
-          &bull; * 表示任意值 | */N 表示每 N 个单位 | N,M 表示多个值<br>
-          &bull; "0 */6 * * *" = 每 6 小时 | "0 4 * * *" = 每天凌晨 4 点
-        </div>
-      </div>
+      <button class="btn btn-primary btn-lg" onclick="saveSchedule()">保存</button>
     </div>
 
     <div id="tab-logs" class="tab-content">
@@ -304,13 +298,7 @@ const SET_LABELS = {
   bEnableNonLoginPenalty:'未登录惩罚',bEnableDefenseOtherGuildPlayer:'防御其他公会玩家',
   bIsUseBackupSaveData:'启用备份存档',bIsUseBackupSaveData_Custom:'启用自定义备份存档'
 };
-const CRON_PRESETS = [
-  {label:'每 1 小时',value:'0 */1 * * *'},{label:'每 2 小时',value:'0 */2 * * *'},
-  {label:'每 4 小时',value:'0 */4 * * *'},{label:'每 6 小时',value:'0 */6 * * *'},
-  {label:'每 8 小时',value:'0 */8 * * *'},{label:'每 12 小时',value:'0 */12 * * *'},
-  {label:'每天凌晨 4:00',value:'0 4 * * *'},{label:'每天凌晨 6:00',value:'0 6 * * *'},
-  {label:'每天中午 12:00',value:'0 12 * * *'},{label:'每周一凌晨 3:00',value:'0 3 * * 1'}
-];
+var RESTART_HOURS = null;
 const CMD_ACTIONS = [
   {value:'info',label:'服务器信息 (Info)',needs:[]},
   {value:'metrics',label:'性能指标 (Metrics)',needs:[]},
@@ -752,31 +740,28 @@ async function loadSchedule() {
   try {
     var d = await api('/schedule'); scheduleData = d;
     document.getElementById('sch-restart-on').checked = d.autoRestart && d.autoRestart.enabled;
-    document.getElementById('sch-restart-cron').value = (d.autoRestart && d.autoRestart.cron) ? d.autoRestart.cron : '0 */6 * * *';
+    // 从 cron 解析小时: "0 */4 * * *" → 4
+    var cron = (d.autoRestart && d.autoRestart.cron) ? d.autoRestart.cron : '0 */6 * * *';
+    var match = cron.match(/\*\/(\d+)/);
+    document.getElementById('sch-restart-hours').value = match ? match[1] : '6';
     document.getElementById('sch-update-on').checked = d.autoUpdate && d.autoUpdate.enabled;
-    document.getElementById('sch-update-cron').value = (d.autoUpdate && d.autoUpdate.cron) ? d.autoUpdate.cron : '0 4 * * *';
     schChanged();
   } catch(e) { showMsg('sch-message', 'error', '加载失败: '+e.message); }
 }
-function setupCronPresets() {
-  function rnd(id) {
-    var h = '';
-    for (var i = 0; i < CRON_PRESETS.length; i++) h += '<button class="btn-outline'+(document.getElementById(id).value===CRON_PRESETS[i].value?' active':'')+'" onclick="document.getElementById(\''+id+'\').value=\''+CRON_PRESETS[i].value+'\';schChanged()">'+CRON_PRESETS[i].label+'</button>';
-    return h;
-  }
-  document.getElementById('sch-restart-presets').innerHTML = '<label class="form-label">预设</label><div style="display:flex;flex-wrap:wrap;gap:6px">'+rnd('sch-restart-cron')+'</div>';
-  document.getElementById('sch-update-presets').innerHTML = '<label class="form-label">预设</label><div style="display:flex;flex-wrap:wrap;gap:6px">'+rnd('sch-update-cron')+'</div>';
-}
+function setupCronPresets() {}
 function schChanged() {
   document.getElementById('sch-restart-extra').style.display = document.getElementById('sch-restart-on').checked ? 'block' : 'none';
-  document.getElementById('sch-update-extra').style.display = document.getElementById('sch-update-on').checked ? 'block' : 'none';
 }
 async function saveSchedule() {
-  var body = { autoRestart:{enabled:document.getElementById('sch-restart-on').checked,cron:document.getElementById('sch-restart-cron').value}, autoUpdate:{enabled:document.getElementById('sch-update-on').checked,cron:document.getElementById('sch-update-cron').value} };
+  var hours = document.getElementById('sch-restart-hours').value;
+  var body = {
+    autoRestart: {enabled: document.getElementById('sch-restart-on').checked, cron: '0 */' + hours + ' * * *'},
+    autoUpdate: {enabled: document.getElementById('sch-update-on').checked, cron: '*/30 * * * *'}
+  };
   try {
     var r = await api('/schedule', {method:'PUT', body:JSON.stringify(body)});
     if (r.error) showMsg('sch-message', 'error', r.error);
-    else showMsg('sch-message', 'success', '定时任务已保存');
+    else showMsg('sch-message', 'success', '已保存');
   } catch(e) { showMsg('sch-message', 'error', '保存失败: '+e.message); }
 }
 
