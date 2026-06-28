@@ -67,10 +67,16 @@ func main() {
 		cfg.PalServerDir,
 	)
 
+	// 从 PalServer 配置文件读取 AdminPassword
+	restPassword := ""
+	if settings, err := services.LoadSettings(cfg.ConfigDir); err == nil {
+		restPassword = settings.Settings["AdminPassword"]
+	}
+
 	restClient := services.NewRestAPIClient(
 		cfg.RestAPIHost,
 		cfg.RestAPIPort,
-		cfg.RestAPIPassword,
+		restPassword,
 	)
 
 	// 注入 SteamCMD 检测回调
