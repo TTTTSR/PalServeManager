@@ -1,0 +1,270 @@
+#!/bin/bash
+# ============================================================
+# palserve — Palworld Server Manager 控制脚本
+# 用法: palserve {start|stop|restart|status|log|install}
+# ============================================================
+set -e
+
+# === 路径配置 ===
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BINARY="${SCRIPT_DIR}/palworld-manager-linux"
+CONFIG="${SCRIPT_DIR}/config.json"
+PID_FILE="${SCRIPT_DIR}/palserve.pid"
+LOG_DIR="${SCRIPT_DIR}/logs"
+MAIN_LOG="${LOG_DIR}/manager.log"
+
+# === 颜色 ===
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# === 自注册到系统 PATH ===
+register_self() {
+    local LINK="/usr/local/bin/palserve"
+    if [ "$1" = "--force" ] || [ ! -L "$LINK" ]; then
+        if [ -f "$LINK" ] && [ ! -L "$LINK" ]; then
+            echo -e "${RED}错误: $LINK 已存在且不是符号链接，请手动处理${NC}"
+            return 1
+        fi
+        sudo ln -sf "$0" "$LINK" 2>/dev/null || {
+            echo -e "${YELLOW}警告: 无法创建 $LINK (需要 sudo 权限)${NC}"
+            echo -e "${YELLOW}手动执行: sudo ln -sf $0 /usr/local/bin/palserve${NC}"
+            return 1
+        }
+        echo -e "${GREEN}✓ 已注册: palserve → $0${NC}"
+    fi
+}
+
+# === 启动 ===
+do_start() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${YELLOW}管理面板已在运行 (PID: $pid)${NC}"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    mkdir -p "$LOG_DIR"
+
+    # 检查配置文件
+    if [ ! -f "$CONFIG" ]; then
+        echo -e "${YELLOW}未找到 config.json，将使用默认配置${NC}"
+    fi
+
+    # 检查二进制文件
+    if [ ! -f "$BINARY" ]; then
+        echo -e "${RED}错误: 未找到 $BINARY${NC}"
+        exit 1
+    fi
+    chmod +x "$BINARY"
+
+    local DAEMON_MODE=false
+    local EXTRA_ARGS=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -d|--daemon) DAEMON_MODE=true; shift ;;
+            -f|--foreground) DAEMON_MODE=false; shift ;;
+            *) EXTRA_ARGS="$EXTRA_ARGS $1"; shift ;;
+        esac
+    done
+
+    if $DAEMON_MODE; then
+        echo -e "${GREEN}正在后台启动管理面板...${NC}"
+        nohup "$BINARY" $EXTRA_ARGS >> "$MAIN_LOG" 2>&1 &
+        local pid=$!
+        echo $pid > "$PID_FILE"
+        sleep 1
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${GREEN}✓ 管理面板已启动 (PID: $pid)${NC}"
+            echo -e "${GREEN}  访问: http://localhost:8080${NC}"
+            echo -e "${GREEN}  日志: $MAIN_LOG${NC}"
+        else
+            echo -e "${RED}✗ 启动失败，请查看日志: $MAIN_LOG${NC}"
+            rm -f "$PID_FILE"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}正在前台启动管理面板... (Ctrl+C 停止)${NC}"
+        echo -e "${GREEN}  访问: http://localhost:8080${NC}"
+        exec "$BINARY" $EXTRA_ARGS
+    fi
+}
+
+# === 停止 ===
+do_stop() {
+    if [ ! -f "$PID_FILE" ]; then
+        echo -e "${YELLOW}管理面板未在运行 (无 PID 文件)${NC}"
+        # 尝试通过进程名查找
+        local pids=$(pgrep -f "palworld-manager-linux" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            echo -e "${YELLOW}发现疑似进程: $pids，尝试终止...${NC}"
+            kill $pids 2>/dev/null || true
+            echo -e "${GREEN}✓ 已终止${NC}"
+        fi
+        return 0
+    fi
+
+    local pid=$(cat "$PID_FILE")
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}PID $pid 已不存在，清除 PID 文件${NC}"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+
+    echo -e "${YELLOW}正在停止管理面板 (PID: $pid)...${NC}"
+    kill "$pid" 2>/dev/null || true
+
+    # 等待优雅退出 (最多 10 秒)
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}超时，强制终止...${NC}"
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+
+    rm -f "$PID_FILE"
+    echo -e "${GREEN}✓ 管理面板已停止${NC}"
+}
+
+# === 重启 ===
+do_restart() {
+    echo -e "${YELLOW}正在重启管理面板...${NC}"
+    do_stop
+    sleep 1
+    do_start --daemon
+}
+
+# === 状态 ===
+do_status() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            local uptime=$(ps -o etime= -p "$pid" 2>/dev/null | xargs)
+            echo -e "${GREEN}● 管理面板运行中${NC}"
+            echo "  PID:    $pid"
+            echo "  运行时间: ${uptime:-未知}"
+            echo "  日志:   $MAIN_LOG"
+            # 检查端口
+            local port=$(grep -oP '"port"\s*:\s*\K\d+' "$CONFIG" 2>/dev/null || echo "8080")
+            echo "  端口:   $port"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # 尝试进程名查找
+    local pids=$(pgrep -f "palworld-manager-linux" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        echo -e "${YELLOW}● 发现运行中的进程，但无 PID 文件${NC}"
+        echo "  PID:    $pids"
+        return 0
+    fi
+
+    echo -e "${RED}● 管理面板未运行${NC}"
+    return 1
+}
+
+# === 查看日志 ===
+do_log() {
+    local lines=${1:-50}
+    mkdir -p "$LOG_DIR"
+
+    if [ -t 0 ]; then
+        # 交互式终端: tail -f
+        if [ -f "$MAIN_LOG" ]; then
+            echo -e "${GREEN}实时日志 ($MAIN_LOG)，Ctrl+C 退出...${NC}"
+            tail -n "$lines" -f "$MAIN_LOG"
+        elif [ -f "${LOG_DIR}/manager-$(date +%Y-%m-%d).log" ]; then
+            local today="${LOG_DIR}/manager-$(date +%Y-%m-%d).log"
+            echo -e "${GREEN}实时日志 ($today)，Ctrl+C 退出...${NC}"
+            tail -n "$lines" -f "$today"
+        else
+            echo -e "${YELLOW}暂无日志文件${NC}"
+        fi
+    else
+        # 非交互式: 直接输出最后 N 行
+        if [ -f "$MAIN_LOG" ]; then
+            tail -n "$lines" "$MAIN_LOG"
+        elif [ -f "${LOG_DIR}/manager-$(date +%Y-%m-%d).log" ]; then
+            tail -n "$lines" "${LOG_DIR}/manager-$(date +%Y-%m-%d).log"
+        else
+            echo -e "${YELLOW}暂无日志文件${NC}"
+        fi
+    fi
+}
+
+# === 安装（注册） ===
+do_install() {
+    register_self --force
+    echo ""
+    echo -e "${GREEN}安装完成！现在可以使用以下命令:${NC}"
+    echo "  palserve start -d    后台启动管理面板"
+    echo "  palserve stop        停止管理面板"
+    echo "  palserve status      查看运行状态"
+    echo "  palserve log         实时查看日志"
+    echo "  palserve restart     重启管理面板"
+}
+
+# === 帮助 ===
+do_help() {
+    echo "Palworld Server Manager - 控制脚本"
+    echo ""
+    echo "用法: palserve <命令> [选项]"
+    echo ""
+    echo "命令:"
+    echo "  start [-d|--daemon]   启动管理面板"
+    echo "                          -d  后台静默运行（日志写入文件）"
+    echo "                          -f  前台运行（默认，日志输出到终端+文件）"
+    echo "  stop                  停止管理面板"
+    echo "  restart               重启管理面板"
+    echo "  status                查看运行状态"
+    echo "  log [行数]            实时查看日志 (默认 50 行)"
+    echo "  install               注册 palserve 到系统 PATH"
+    echo "  help                  显示此帮助"
+    echo ""
+    echo "示例:"
+    echo "  palserve start -d        # 后台启动"
+    echo "  palserve log 100         # 查看最近 100 行日志"
+    echo "  palserve restart         # 重启服务"
+}
+
+# === 主入口 ===
+case "${1:-}" in
+    start)
+        shift
+        do_start "$@"
+        ;;
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_restart
+        ;;
+    status)
+        do_status
+        ;;
+    log)
+        do_log "${2:-50}"
+        ;;
+    install)
+        do_install
+        ;;
+    help|--help|-h)
+        do_help
+        ;;
+    *)
+        # 首次运行自动注册
+        if [ ! -L "/usr/local/bin/palserve" ]; then
+            register_self
+        fi
+        do_help
+        ;;
+esac

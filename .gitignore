@@ -1,0 +1,20 @@
+# Go
+backend/palworld-manager
+backend/palworld-manager.exe
+backend/config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# claude
+.claude/

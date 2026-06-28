@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>幻兽帕鲁 - 服务器管理面板</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f5f5;--surface:#fff;--border:#d0d0d0;--border-light:#e5e5e5;
+  --text:#1a1a1a;--text-secondary:#666;--text-muted:#999;
+  --accent:#000;--accent-hover:#333;--success:#1a1a1a;--warning:#555;--danger:#1a1a1a;
+  --radius:4px
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#ccc;border-radius:2px}
+
+.app{min-height:100vh;display:flex;flex-direction:column}
+.app-header{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px}
+.header-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.header-left h1{font-size:1.1rem;font-weight:500;white-space:nowrap;letter-spacing:-0.3px}
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 12px;border-radius:3px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);white-space:nowrap;font-weight:500}
+.status-badge.running{border-color:#2d2d2d;color:#1a1a1a;background:#eee}
+.status-badge.stopped,.status-badge.not_installed{border-color:#999;color:#666;background:#f5f5f5}
+.status-badge.starting,.status-badge.stopping,.status-badge.installing{border-color:#aaa;color:#555;background:#fafafa}
+.status-badge.error{border-color:#333;color:#1a1a1a}
+.pl-count{color:var(--text-secondary);font-size:.78rem}
+
+.tab-nav{display:flex;background:var(--surface);border-bottom:1px solid var(--border);padding:0 12px;overflow-x:auto}
+.tab-nav button{display:flex;align-items:center;gap:4px;padding:11px 16px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.82rem;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s,border-color .15s}
+.tab-nav button:hover{color:var(--text)}
+.tab-nav button.active{color:var(--text);border-bottom-color:var(--text);font-weight:500}
+
+.app-main{flex:1;padding:20px;max-width:1400px;margin:0 auto;width:100%}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.card{background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius);padding:18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.card h2{font-size:.9rem;font-weight:500;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;letter-spacing:-0.2px}
+
+.btn{display:inline-flex;align-items:center;gap:4px;padding:7px 16px;border:1px solid var(--border);border-radius:var(--radius);font-size:.82rem;cursor:pointer;font-weight:500;white-space:nowrap;background:var(--surface);color:var(--text);transition:background .12s,border-color .12s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn-primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn-success{background:#2d2d2d;border-color:#2d2d2d;color:#fff}.btn-success:hover:not(:disabled){background:#4a4a4a}
+.btn-danger{background:#555;border-color:#555;color:#fff}.btn-danger:hover:not(:disabled){background:#777}
+.btn-warning{background:#888;border-color:#888;color:#fff}.btn-warning:hover:not(:disabled){background:#aaa}
+.btn-sm{padding:4px 10px;font-size:.75rem}
+.btn-lg{padding:9px 24px;font-size:.9rem}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.btn-outline{padding:4px 10px;font-size:.75rem;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);cursor:pointer;transition:all .12s}
+.btn-outline:hover,.btn-outline.active{background:var(--text);border-color:var(--text);color:#fff}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.stat-card{background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius);padding:14px;text-align:center}
+.stat-card .s-value{font-size:1.2rem;font-weight:600;color:var(--text)}
+.stat-card .s-label{font-size:.75rem;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.progress-bar{width:100%;height:4px;background:var(--bg);border-radius:2px;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;border-radius:2px;transition:width .5s}
+.pf-cpu{background:var(--text)}.pf-mem{background:#555}.pf-disk{background:#888}.pf-danger{background:#333}
+
+.form-group{margin-bottom:12px}
+.form-label{display:block;font-size:.78rem;color:var(--text-secondary);margin-bottom:3px}
+input[type="text"],input[type="number"],input[type="password"],select,textarea{
+  width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text);font-size:.82rem
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--text)}
+select{cursor:pointer}
+label.checkbox{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;color:var(--text)}
+label.checkbox input[type="checkbox"]{width:15px;height:15px;accent-color:var(--text)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.settings-cat{margin-bottom:12px}
+.settings-cat-header{padding:8px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:var(--radius) var(--radius) 0 0;font-weight:500;font-size:.82rem;cursor:pointer;display:flex;justify-content:space-between;user-select:none;color:var(--text)}
+.settings-cat-body{border:1px solid var(--border-light);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:14px}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.setting-changed input,.setting-changed select{border-color:#333!important;box-shadow:0 0 0 1px #333}
+
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border-light)}
+th{color:var(--text-secondary);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px}
+tr:hover{background:var(--bg)}
+
+.log-container{background:#1a1a1a;border:1px solid #333;border-radius:var(--radius);padding:14px;max-height:500px;overflow-y:auto;font-family:'SF Mono','Courier New',monospace;font-size:.75rem;line-height:1.6;color:#d0d0d0}
+.log-line{white-space:pre-wrap;word-break:break-all}
+.log-error{color:#ff6b6b}.log-warn{color:#ffd93d}
+
+.alert{padding:8px 14px;border-radius:var(--radius);margin-bottom:12px;font-size:.82rem;border:1px solid transparent}
+.alert-success{background:#f0f0f0;border-color:#d0d0d0;color:#1a1a1a}
+.alert-error{background:#f5f0f0;border-color:#ddd;color:#1a1a1a}
+.alert-warning{background:#f5f5f0;border-color:#ddd;color:#555}
+.alert-info{background:#f0f0f5;border-color:#ddd;color:#444}
+
+.update-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.update-card{background:var(--bg);border:1px solid var(--border-light);border-radius:var(--radius);padding:14px}
+.update-card h3{font-size:.78rem;color:var(--text-secondary);margin-bottom:4px;font-weight:500}
+.update-card .build-id{font-size:1rem;font-weight:600;font-family:monospace}
+
+.spinner{display:inline-block;width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading{text-align:center;padding:30px;color:var(--text-secondary)}
+.empty{text-align:center;padding:24px;color:var(--text-muted);font-size:.85rem}
+
+@media(max-width:768px){
+  .app-header{flex-direction:column;text-align:center}
+  .header-left{flex-direction:column}
+  .tab-nav button{padding:10px 12px;font-size:.75rem}
+  .form-row{grid-template-columns:1fr}
+  .update-cards{grid-template-columns:1fr}
+  .btn-group .btn{width:100%;justify-content:center}
+}
+</style>
+</head>
+<body>
+<div id="app" class="app">
+  <header class="app-header">
+    <div class="header-left">
+      <h1>幻兽帕鲁 - 服务器管理面板</h1>
+      <span id="header-status" class="status-badge"></span>
+    </div>
+  </header>
+
+  <nav class="tab-nav" id="tab-nav">
+    <button data-tab="dashboard" class="active">仪表盘</button>
+    <button data-tab="controls">服务器控制</button>
+    <button data-tab="config">配置编辑</button>
+    <button data-tab="update">更新管理</button>
+    <button data-tab="schedule">定时任务</button>
+    <button data-tab="logs">日志查看</button>
+  </nav>
+
+  <main class="app-main">
+    <div id="tab-dashboard" class="tab-content active">
+      <div id="dash-message"></div>
+      <div class="card"><h2>服务器状态</h2><div class="stats-grid" id="server-stats"><div class="loading"><div class="spinner"></div><p>加载中...</p></div></div></div>
+      <div class="card"><h2>系统资源</h2><div class="stats-grid" id="system-stats"><div class="loading"><div class="spinner"></div><p>加载中...</p></div></div></div>
+      <div style="text-align:right;color:var(--text-secondary);font-size:.78rem">最后更新: <span id="dash-time">-</span></div>
+    </div>
+
+    <div id="tab-controls" class="tab-content">
+      <div id="ctrl-message"></div>
+      <div class="card" id="ctrl-not-installed" style="display:none">
+        <h2>服务器未安装</h2>
+        <div style="text-align:center;padding:30px">
+          <p style="color:var(--text-secondary);margin-bottom:16px">检测到 Palworld 服务器尚未安装。<br>点击下方按钮通过 SteamCMD 自动安装（约 20GB）。</p>
+          <p style="color:var(--text-secondary);font-size:.78rem;margin-bottom:8px">安装目录: <span id="ctrl-install-dir">-</span></p>
+          <p id="ctrl-steamcmd-status" style="font-size:.78rem;margin-bottom:16px"></p>
+          <button class="btn btn-success btn-lg" onclick="installSrv()" id="btn-install">安装服务器</button>
+          <div id="ctrl-install-progress" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <div class="card" id="ctrl-controls" style="display:none">
+        <h2>服务器控制</h2>
+        <div style="margin-bottom:14px">
+          <strong>状态：</strong><span id="ctrl-status" class="status-badge" style="margin-left:8px">加载中...</span>
+          <span id="ctrl-uptime" style="margin-left:14px;color:var(--text-secondary)"></span>
+          <span id="ctrl-pid" style="margin-left:14px;color:var(--text-secondary)"></span>
+        </div>
+        <div id="ctrl-hint" style="margin-bottom:12px"></div>
+        <div class="btn-group">
+          <button class="btn btn-success btn-lg" id="btn-start" onclick="startSrv()">启动服务器</button>
+          <button class="btn btn-warning btn-lg" id="btn-restart" onclick="restartSrv()">重启服务器</button>
+          <button class="btn btn-danger btn-lg" id="btn-stop" onclick="stopSrv()">停止服务器</button>
+        </div>
+      </div>
+
+      <div class="card" id="ctrl-players"><h2>在线玩家 (<span id="player-count">0</span>)</h2><div id="player-list"><div class="empty">暂无玩家在线</div></div></div>
+
+      <div class="card" id="ctrl-cmd">
+        <h2>REST API 命令控制台</h2>
+        <p style="color:var(--text-secondary);font-size:.8rem;margin-bottom:12px">使用 Palworld 官方 REST API (端口 8212)。RCON 已弃用。</p>
+        <div class="form-group"><label class="form-label">操作</label><select id="cmd-action" onchange="onCmdActionChange()"></select></div>
+        <div id="cmd-extra-fields"></div>
+        <button class="btn btn-primary" onclick="execCmd()" id="btn-cmd">执行</button>
+        <pre class="log-container" id="cmd-output" style="margin-top:12px;max-height:300px;display:none;white-space:pre-wrap"></pre>
+      </div>
+    </div>
+
+    <div id="tab-config" class="tab-content">
+      <div id="cfg-message"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveConfig()" id="btn-save-cfg">保存配置</button>
+        <button class="btn btn-danger" onclick="resetConfig()">重置为默认</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:.8rem;margin-bottom:14px">配置文件: <span id="cfg-path">-</span><br>注意: 修改后需重启服务器生效。部分世界设置可能被 WorldOption.sav 覆盖。</p>
+      <div id="cfg-categories"><div class="loading"><div class="spinner"></div><p>加载配置中...</p></div></div>
+    </div>
+
+    <div id="tab-update" class="tab-content">
+      <div id="upd-message"></div>
+      <div class="card"><h2>版本信息</h2>
+        <div class="update-cards">
+          <div class="update-card"><h3>当前版本</h3><div class="build-id" id="upd-current">-</div><div style="color:var(--text-secondary);font-size:.78rem;margin-top:6px" id="upd-current-info"></div></div>
+          <div class="update-card"><h3>最新版本</h3><div class="build-id" id="upd-latest">检查中...</div><div style="color:var(--text-secondary);font-size:.78rem;margin-top:6px" id="upd-latest-info"></div></div>
+        </div>
+        <div id="upd-available"></div>
+        <div id="upd-progress"></div>
+      </div>
+      <div class="card"><h2>更新操作</h2>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="checkUpdate()">检查更新</button>
+          <button class="btn btn-success" onclick="runUpdate(false)">更新服务器</button>
+          <button class="btn btn-warning" onclick="runUpdate(true)">更新并验证文件</button>
+        </div>
+        <p style="color:var(--text-secondary);font-size:.78rem;margin-top:10px">更新前请先停止服务器。更新可能需要几分钟。</p>
+      </div>
+      <div class="card" id="upd-log-card" style="display:none"><h2>更新日志</h2><pre class="log-container" id="upd-log"></pre></div>
+    </div>
+
+    <div id="tab-schedule" class="tab-content">
+      <div id="sch-message"></div>
+      <div class="card">
+        <h2>自动重启</h2>
+        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">定期重启释放内存，防止内存泄漏。建议每 4-6 小时。</p>
+        <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-restart-on" onchange="schChanged()"><span>启用自动重启</span></label></div>
+        <div id="sch-restart-extra" style="display:none">
+          <div class="form-group"><label class="form-label">Cron 表达式</label><input type="text" id="sch-restart-cron" placeholder="0 */6 * * *" onchange="schChanged()"></div>
+          <div class="form-group" id="sch-restart-presets"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>自动更新</h2>
+        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">自动检查并安装更新。更新前会保存存档、停止服务器。</p>
+        <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-update-on" onchange="schChanged()"><span>启用自动更新</span></label></div>
+        <div id="sch-update-extra" style="display:none">
+          <div class="form-group"><label class="form-label">Cron 表达式</label><input type="text" id="sch-update-cron" placeholder="0 4 * * *" onchange="schChanged()"></div>
+          <div class="form-group" id="sch-update-presets"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="saveSchedule()">保存定时任务配置</button>
+      <div class="card" style="margin-top:14px">
+        <h2>Cron 表达式说明</h2>
+        <div style="font-family:monospace;font-size:.82rem;line-height:2;color:var(--text-secondary)">
+          格式: <strong>分钟 小时 日 月 星期</strong><br>
+          &bull; 分钟 (0-59) | 小时 (0-23) | 日 (1-31) | 月 (1-12) | 星期 (0-7, 0=周日)<br>
+          &bull; * 表示任意值 | */N 表示每 N 个单位 | N,M 表示多个值<br>
+          &bull; "0 */6 * * *" = 每 6 小时 | "0 4 * * *" = 每天凌晨 4 点
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-logs" class="tab-content">
+      <div class="card">
+        <h2>服务器日志
+          <div style="display:flex;gap:10px;align-items:center;font-weight:normal;font-size:.82rem;flex-wrap:wrap">
+            <select id="log-lines" onchange="fetchLogs()" style="width:80px"><option value="50">50</option><option value="100" selected>100</option><option value="200">200</option><option value="500">500</option></select>
+            <input type="text" id="log-filter" placeholder="过滤关键词..." oninput="renderLogs()" style="width:160px;padding:6px 10px">
+            <label class="checkbox"><input type="checkbox" id="log-auto" checked onchange="toggleLogAuto()">自动刷新</label>
+            <button class="btn btn-sm btn-primary" onclick="fetchLogs()">刷新</button>
+          </div>
+        </h2>
+      </div>
+      <div class="card">
+        <div id="log-content" class="log-container"><div class="loading"><div class="spinner"></div><p>加载中...</p></div></div>
+        <div style="margin-top:10px;text-align:right;color:var(--text-secondary);font-size:.78rem" id="log-info"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+var serverStatus = null;
+var configData = null;
+var originalSettings = {};
+var updateInfo = null;
+var scheduleData = null;
+var playerList = [];
+var logTimer = null;
+var dashTimer = null;
+var ctrlTimer = null;
+var currentTab = 'dashboard';
+
+const API = '/api';
+const CAT_NAMES = {
+  Server:'服务器设置',Multiplayer:'多人游戏',Player:'玩家设置',Pal:'帕鲁设置',
+  Time:'时间设置',Building:'建筑设置',World:'世界设置',Base:'基地设置',Other:'其他设置'
+};
+const SET_LABELS = {
+  ServerName:'服务器名称',ServerDescription:'服务器描述',ServerPassword:'加入密码',
+  AdminPassword:'管理员密码',PublicPort:'公开端口',PublicIP:'公开IP',
+  RESTAPIEnabled:'启用REST API',RESTAPIPort:'REST API端口',AllowConnectPlatform:'允许平台',
+  bUseAuth:'使用认证',BanListURL:'封禁列表URL',Region:'区域',ServerPlayerMaxNum:'最大玩家数',
+  bIsMultiplay:'多人游戏',bIsPvP:'PvP模式',bEnablePlayerToPlayerDamage:'玩家间伤害',
+  bEnableFriendlyFire:'友军伤害',CoopPlayerMaxNum:'合作玩家数',GuildPlayerMaxNum:'公会最大人数',
+  bShowPlayerList:'显示玩家列表',Difficulty:'难度',DeathPenalty:'死亡惩罚',bHardcore:'硬核模式',
+  bPalLost:'帕鲁永久死亡',DayTimeSpeedRate:'白天速度',NightTimeSpeedRate:'夜晚速度',
+  ExpRate:'经验倍率',WorkSpeedRate:'工作速度倍率',PlayerDamageRateAttack:'玩家攻击倍率',
+  PlayerDamageRateDefense:'玩家防御倍率',PlayerStomachDecreaceRate:'玩家饱食度消耗',
+  PlayerStaminaDecreaceRate:'玩家体力消耗',PlayerAutoHPRegeneRate:'玩家生命恢复',
+  PlayerAutoHpRegeneRateInSleep:'玩家睡眠恢复',PalCaptureRate:'捕获概率倍率',
+  PalSpawnNumRate:'帕鲁生成数量',PalDamageRateAttack:'帕鲁攻击倍率',
+  PalDamageRateDefense:'帕鲁防御倍率',PalStomachDecreaceRate:'帕鲁饱食度消耗',
+  PalStaminaDecreaceRate:'帕鲁体力消耗',PalAutoHPRegeneRate:'帕鲁生命恢复',
+  PalAutoHpRegeneRateInSleep:'帕鲁睡眠恢复',PalEggDefaultHatchingTime:'蛋孵化时间倍率',
+  BuildObjectDamageRate:'建筑伤害倍率',BuildObjectDeteriorationDamageRate:'建筑劣化速度',
+  bBuildAreaLimit:'建造区域限制',CollectionDropRate:'收集掉落倍率',
+  CollectionObjectHpRate:'收集物生命倍率',CollectionObjectRespawnSpeedRate:'收集物重生速度',
+  EnemyDropItemRate:'敌人掉落倍率',DropItemMaxNum:'最大掉落物数量',
+  DropItemAliveMaxHours:'掉落物存活时间',bEnableInvaderEnemy:'袭击事件',
+  bEnableFastTravel:'快速旅行',BaseCampMaxNum:'最大基地数',BaseCampMaxNumInGuild:'公会最大基地数',
+  BaseCampWorkerMaxNum:'基地最大工人数',bInvisibleOtherGuildBaseCampAreaFX:'隐藏其他公会基地范围',
+  bAutoResetGuildNoOnlinePlayers:'自动解散无人公会',AutoResetGuildTimeNoOnlinePlayers:'无人公会自动解散时间',
+  bEnableNonLoginPenalty:'未登录惩罚',bEnableDefenseOtherGuildPlayer:'防御其他公会玩家',
+  bIsUseBackupSaveData:'启用备份存档',bIsUseBackupSaveData_Custom:'启用自定义备份存档'
+};
+const CRON_PRESETS = [
+  {label:'每 1 小时',value:'0 */1 * * *'},{label:'每 2 小时',value:'0 */2 * * *'},
+  {label:'每 4 小时',value:'0 */4 * * *'},{label:'每 6 小时',value:'0 */6 * * *'},
+  {label:'每 8 小时',value:'0 */8 * * *'},{label:'每 12 小时',value:'0 */12 * * *'},
+  {label:'每天凌晨 4:00',value:'0 4 * * *'},{label:'每天凌晨 6:00',value:'0 6 * * *'},
+  {label:'每天中午 12:00',value:'0 12 * * *'},{label:'每周一凌晨 3:00',value:'0 3 * * 1'}
+];
+const CMD_ACTIONS = [
+  {value:'info',label:'服务器信息 (Info)',needs:[]},
+  {value:'metrics',label:'性能指标 (Metrics)',needs:[]},
+  {value:'players',label:'玩家列表 (Players)',needs:[]},
+  {value:'announce',label:'广播消息 (Announce)',needs:['message']},
+  {value:'save',label:'保存存档 (Save)',needs:[]},
+  {value:'shutdown',label:'计划关机 (Shutdown)',needs:['waittime','message']},
+  {value:'kick',label:'踢出玩家 (Kick)',needs:['userid','message']},
+  {value:'ban',label:'封禁玩家 (Ban)',needs:['userid','message']},
+  {value:'unban',label:'解封玩家 (Unban)',needs:['userid']}
+];
+
+async function api(path, opts={}) {
+  const headers = {'Content-Type':'application/json',...opts.headers};
+  const res = await fetch(API + path, {...opts, headers});
+  let data;
+  try { data = await res.json(); } catch(e) { data = {}; }
+  if (!res.ok && !data.error) data.error = 'HTTP ' + res.status;
+  return data;
+}
+
+function initApp() {
+  setupTabs();
+  setupCmdActions();
+  setupCronPresets();
+  switchTab('dashboard');
+  refreshDashboard();
+  refreshControls();
+  dashTimer = setInterval(refreshDashboard, 5000);
+  ctrlTimer = setInterval(refreshControls, 5000);
+  if (document.getElementById('log-auto').checked) logTimer = setInterval(fetchLogs, 5000);
+}
+initApp();
+
+// WebSocket
+var ws = null;
+function connectWS() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/api/ws');
+  ws.onopen = function() { console.log('[WS] connected'); };
+  ws.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.type === 'status') {
+        serverStatus = {status: msg.status};
+        updateHeaderStatus(serverStatus);
+        updateUIForStatus(msg.status);
+      }
+    } catch(ex) { console.error('[WS] parse error:', ex); }
+  };
+  ws.onclose = function() { ws = null; setTimeout(connectWS, 3000); };
+  ws.onerror = function() { ws && ws.close(); };
+}
+connectWS();
+
+function updateUIForStatus(st) {
+  var running = st === 'running';
+  var pp = document.getElementById('ctrl-players');
+  var cp = document.getElementById('ctrl-cmd');
+  if (pp) pp.style.display = running ? '' : 'none';
+  if (cp) cp.style.display = running ? '' : 'none';
+  restartTimers(running);
+}
+
+function restartTimers(running) {
+  if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
+  if (ctrlTimer) { clearInterval(ctrlTimer); ctrlTimer = null; }
+  if (running) {
+    dashTimer = setInterval(refreshDashboard, 5000);
+    ctrlTimer = setInterval(refreshControls, 5000);
+  } else {
+    ctrlTimer = setInterval(refreshControls, 5000);
+  }
+}
+
+function setupTabs() {
+  var btns = document.querySelectorAll('#tab-nav button');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].addEventListener('click', (function(tab) { return function() { switchTab(tab); }; })(btns[i].dataset.tab));
+  }
+}
+function switchTab(id) {
+  currentTab = id;
+  var btns = document.querySelectorAll('#tab-nav button');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].dataset.tab === id);
+  var cs = document.querySelectorAll('.tab-content');
+  for (var j = 0; j < cs.length; j++) cs[j].classList.toggle('active', cs[j].id === 'tab-' + id);
+  if (id === 'dashboard') refreshDashboard();
+  if (id === 'controls') refreshControls();
+  if (id === 'config' && !configData) loadConfig();
+  if (id === 'update' && !updateInfo) refreshUpdate();
+  if (id === 'schedule' && !scheduleData) loadSchedule();
+  if (id === 'logs') fetchLogs();
+}
+
+async function refreshDashboard() {
+  if (currentTab !== 'dashboard') return;
+  try {
+    var s = await api('/server/status');
+    serverStatus = s;
+    updateHeaderStatus(s);
+    var st = (s && s.status) ? s.status : 'error';
+    var stats = null;
+    if (st === 'running') stats = await api('/monitor/stats').catch(function(){ return null; });
+    var sys = (stats && stats.system) ? stats.system : {};
+    var srv = (stats && stats.server) ? stats.server : {};
+    if (st === 'not_installed') {
+      var sc = (s && s.steamcmdReady);
+      document.getElementById('server-stats').innerHTML = '<div style="text-align:center;padding:20px;grid-column:1/-1"><p style="color:var(--text-secondary);margin-bottom:8px">服务器未安装</p><p style="font-size:.78rem;margin-bottom:12px;color:'+(sc?'var(--text)':'var(--danger)')+'">'+(sc?'SteamCMD 已就绪':'SteamCMD 未安装 - sudo apt install steamcmd')+'</p><button class="btn btn-success" onclick="switchTab(\'controls\');installSrv()" '+(sc?'':'disabled')+'>安装服务器</button></div>';
+    } else {
+      document.getElementById('server-stats').innerHTML = buildStatCards([
+        {value:srv.pid||'-',label:'进程 PID'},
+        {value:srv.playerCount != null ? srv.playerCount : '-',label:'在线玩家'},
+        {value:(srv.cpuUsage != null ? srv.cpuUsage : '-')+'%',label:'服务器 CPU',pct:srv.cpuUsage,cls:'pf-cpu'},
+        {value:fmtBytes(srv.memoryUsed||0),label:'服务器内存',pct:srv.memoryUsage,cls:'pf-mem'}
+      ]);
+    }
+    document.getElementById('system-stats').innerHTML = buildStatCards([
+      {value:(sys.cpuUsage != null ? sys.cpuUsage : '-')+'%',label:'系统 CPU',pct:sys.cpuUsage,cls:'pf-cpu'},
+      {value:fmtBytes(sys.memoryUsed||0)+' / '+fmtBytes(sys.memoryTotal||0),label:'系统内存 ('+(sys.memoryUsage != null ? sys.memoryUsage : '-')+'%)',pct:sys.memoryUsage,cls:'pf-mem'},
+      {value:fmtBytes(sys.diskUsed||0)+' / '+fmtBytes(sys.diskTotal||0),label:'磁盘使用 ('+(sys.diskUsage != null ? sys.diskUsage : '-')+'%)',pct:sys.diskUsage,cls:'pf-disk'},
+      {value:sys.uptime||'-',label:'系统运行时间'}
+    ]);
+    document.getElementById('dash-time').textContent = stats && stats.timestamp ? new Date(stats.timestamp).toLocaleTimeString('zh-CN') : '-';
+    updateHeaderStatus(s);
+  } catch(e) { console.error(e); }
+}
+
+function buildStatCards(items) {
+  var h = '';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    h += '<div class="stat-card"><div class="s-value">'+it.value+'</div><div class="s-label">'+it.label+'</div>';
+    if (it.pct !== undefined) h += '<div class="progress-bar"><div class="progress-fill '+it.cls+'" style="width:'+Math.min(it.pct||0,100)+'%"></div></div>';
+    h += '</div>';
+  }
+  return h;
+}
+
+async function refreshControls() {
+  if (currentTab !== 'controls') return;
+  try {
+    var s = await api('/server/status').catch(function(){ return {status:'error',installed:false}; });
+    serverStatus = s;
+    var st = s.status || 'stopped';
+    var pd = {players:[]};
+    if (st === 'running') pd = await api('/server/players').catch(function(){ return {players:[]}; });
+    playerList = pd.players || [];
+    var ni = st === 'not_installed';
+    document.getElementById('ctrl-not-installed').style.display = ni ? 'block' : 'none';
+    document.getElementById('ctrl-controls').style.display = ni ? 'none' : 'block';
+    if (ni) {
+      updateHeaderStatus(s);
+      var sc = s.steamcmdReady;
+      var el = document.getElementById('ctrl-steamcmd-status');
+      if (sc) { el.innerHTML = '<span style="color:var(--text)">SteamCMD 已安装</span>'; document.getElementById('btn-install').disabled = false; }
+      else { el.innerHTML = '<span style="color:var(--danger)">SteamCMD 未安装</span><br><span style="color:var(--text-secondary);font-size:.75rem">sudo apt install steamcmd</span>'; document.getElementById('btn-install').disabled = true; }
+      api('/config').then(function(cfg) {
+        if (cfg && cfg.filePath) { var idx = cfg.filePath.indexOf('/Pal/Saved/'); document.getElementById('ctrl-install-dir').textContent = idx > 0 ? cfg.filePath.substring(0, idx) : '未知'; }
+      }).catch(function(){});
+      return;
+    }
+    var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',installing:'安装中',error:'错误'};
+    document.getElementById('ctrl-status').textContent = labels[st] || st;
+    document.getElementById('ctrl-status').className = 'status-badge ' + st;
+    document.getElementById('ctrl-uptime').textContent = s.uptime ? '运行时间: ' + s.uptime : '';
+    document.getElementById('ctrl-pid').textContent = s.pid > 0 ? 'PID: ' + s.pid : '';
+    var hint = document.getElementById('ctrl-hint');
+    if (st === 'stopped') hint.innerHTML = '<div class="alert alert-info">服务器已安装但未启动，点击下方按钮启动</div>';
+    else if (st === 'installing') hint.innerHTML = '<div class="alert alert-info"><span class="spinner" style="display:inline-block;width:16px;height:16px;margin-right:8px"></span>正在安装中...</div>';
+    else hint.innerHTML = '';
+    var run = st === 'running';
+    var trans = st === 'starting' || st === 'stopping' || st === 'installing';
+    document.getElementById('btn-start').disabled = run || trans;
+    document.getElementById('btn-restart').disabled = !run || trans;
+    document.getElementById('btn-stop').disabled = !run || trans;
+    document.getElementById('player-count').textContent = playerList.length;
+    renderPlayerList();
+    updateHeaderStatus(s);
+  } catch(e) { console.error(e); }
+}
+
+async function installSrv() {
+  if (!confirm('确定要安装 Palworld 服务器吗？\n\n通过 SteamCMD 下载约 20GB，需要几分钟。\n\n请确保已安装 SteamCMD: sudo apt install steamcmd')) return;
+  document.getElementById('btn-install').disabled = true;
+  document.getElementById('ctrl-install-progress').innerHTML = '<div class="alert alert-info"><span class="spinner" style="display:inline-block;width:16px;height:16px;margin-right:8px"></span>正在安装 Palworld 服务器...</div>';
+  try {
+    var r = await api('/server/install', {method:'POST'});
+    if (r.error) {
+      document.getElementById('ctrl-install-progress').innerHTML = '<div class="alert alert-error">安装失败: ' + r.error + '</div>';
+      document.getElementById('btn-install').disabled = false;
+    } else {
+      document.getElementById('ctrl-install-progress').innerHTML = '<div class="alert alert-success">' + r.message + '</div>';
+      var pc = 0;
+      var stages = ['正在下载 Palworld 服务器（约 20GB）...', '正在验证游戏文件...', '安装即将完成...'];
+      var poll = setInterval(async function() {
+        pc++;
+        var si = Math.min(Math.floor(pc / 12), stages.length - 1);
+        var pe = document.getElementById('ctrl-install-progress');
+        pe.innerHTML = '<div class="alert alert-info"><span class="spinner" style="display:inline-block;width:16px;height:16px;margin-right:8px"></span>' + stages[si] + ' (' + (pc * 5) + '秒)</div>';
+        var ss = await api('/server/status');
+        if (ss.status !== 'installing' || pc > 180) {
+          clearInterval(poll);
+          if (ss.status === 'stopped') pe.innerHTML = '<div class="alert alert-success">安装完成！服务器已就绪。</div>';
+          else if (pc > 180) pe.innerHTML = '<div class="alert alert-warning">安装可能仍在进行中，请稍后刷新页面查看。</div>';
+          refreshControls();
+        }
+      }, 5000);
+    }
+  } catch(e) {
+    document.getElementById('ctrl-install-progress').innerHTML = '<div class="alert alert-error">请求失败: ' + e.message + '</div>';
+    document.getElementById('btn-install').disabled = false;
+  }
+}
+
+function renderPlayerList() {
+  var el = document.getElementById('player-list');
+  if (playerList.length === 0) { el.innerHTML = '<div class="empty">暂无玩家在线</div>'; return; }
+  var rows = '';
+  for (var i = 0; i < playerList.length; i++) {
+    var p = playerList[i];
+    rows += '<tr><td>'+(p.name||p.Name||'-')+'</td><td style="font-family:monospace;font-size:.78rem">'+(p.userid||p.UserID||'-')+'</td><td>'+(p.level != null ? p.level : (p.Level != null ? p.Level : '-'))+'</td><td>'+(p.ping != null ? Math.round(p.ping)+'ms' : '-')+'</td><td style="font-size:.78rem">'+(p.location||p.Location||'-')+'</td></tr>';
+  }
+  el.innerHTML = '<table><thead><tr><th>名称</th><th>User ID</th><th>等级</th><th>延迟</th><th>位置</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function updateHeaderStatus(s) {
+  var el = document.getElementById('header-status');
+  if (!s || !s.status) { el.innerHTML = ''; return; }
+  var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',not_installed:'未安装',installing:'安装中',error:'错误'};
+  el.textContent = labels[s.status] || s.status;
+  el.className = 'status-badge ' + (s.status||'');
+  if (s.status === 'running' && s.playerCount !== undefined) {
+    el.innerHTML += ' <span class="pl-count">| ' + s.playerCount + ' 玩家</span>';
+  }
+}
+
+async function startSrv() {
+  serverStatus = {status:'starting'};
+  updateHeaderStatus(serverStatus);
+  updateUIForStatus('starting');
+  try {
+    var r = await api('/server/start', {method:'POST'});
+    if (r.error) {
+      serverStatus = {status:'stopped'};
+      updateHeaderStatus(serverStatus);
+      updateUIForStatus('stopped');
+      showMsg('ctrl-message', 'error', r.error);
+    } else {
+      showMsg('ctrl-message', 'success', r.message || '启动已发起，等待就绪...');
+    }
+  } catch(e) {
+    serverStatus = {status:'stopped'};
+    updateHeaderStatus(serverStatus);
+    showMsg('ctrl-message', 'error', e.message);
+  }
+}
+async function stopSrv() {
+  if (!confirm('确定要停止服务器吗？所有玩家将被断开连接。')) return;
+  serverStatus = {status:'stopping'};
+  updateHeaderStatus(serverStatus);
+  updateUIForStatus('stopping');
+  try {
+    var r = await api('/server/stop?message=Server+is+stopping&delay=60', {method:'POST'});
+    if (r.error) { showMsg('ctrl-message', 'error', r.error); }
+    else { showMsg('ctrl-message', 'warning', r.message || '停止已发起'); }
+  } catch(e) { showMsg('ctrl-message', 'error', e.message); }
+}
+async function restartSrv() {
+  if (!confirm('确定要重启服务器吗？')) return;
+  serverStatus = {status:'stopping'};
+  updateHeaderStatus(serverStatus);
+  updateUIForStatus('stopping');
+  try {
+    var r = await api('/server/restart', {method:'POST'});
+    if (r.error) { showMsg('ctrl-message', 'error', r.error); }
+    else { showMsg('ctrl-message', 'info', r.message || '重启已发起...'); }
+  } catch(e) { showMsg('ctrl-message', 'error', e.message); }
+}
+
+function setupCmdActions() {
+  var sel = document.getElementById('cmd-action');
+  var o = '';
+  for (var i = 0; i < CMD_ACTIONS.length; i++) o += '<option value="'+CMD_ACTIONS[i].value+'">'+CMD_ACTIONS[i].label+'</option>';
+  sel.innerHTML = o;
+  onCmdActionChange();
+}
+function onCmdActionChange() {
+  var val = document.getElementById('cmd-action').value;
+  var act = null;
+  for (var i = 0; i < CMD_ACTIONS.length; i++) { if (CMD_ACTIONS[i].value === val) { act = CMD_ACTIONS[i]; break; } }
+  if (!act) return;
+  var h = '';
+  if (act.needs.indexOf('message') >= 0) h += '<div class="form-group"><label class="form-label">消息内容</label><input type="text" id="cmd-msg" placeholder="输入消息..."></div>';
+  if (act.needs.indexOf('userid') >= 0) h += '<div class="form-group"><label class="form-label">玩家 User ID</label><input type="text" id="cmd-userid" placeholder="Steam ID / User ID"></div>';
+  if (act.needs.indexOf('waittime') >= 0) h += '<div class="form-group"><label class="form-label">等待时间 (秒)</label><input type="number" id="cmd-waittime" value="60" min="1"></div>';
+  document.getElementById('cmd-extra-fields').innerHTML = h;
+}
+async function execCmd() {
+  var act = document.getElementById('cmd-action').value;
+  var params = {};
+  var me = document.getElementById('cmd-msg'), ue = document.getElementById('cmd-userid'), we = document.getElementById('cmd-waittime');
+  if (me) params.message = me.value;
+  if (ue) params.userid = ue.value;
+  if (we) params.waittime = parseInt(we.value) || 60;
+  document.getElementById('btn-cmd').disabled = true;
+  try {
+    var d = await api('/server/command', {method:'POST', body:JSON.stringify({action:act, message:params.message, userid:params.userid, waittime:params.waittime})});
+    var out = document.getElementById('cmd-output');
+    out.style.display = 'block';
+    out.textContent = d.output || d.error || JSON.stringify(d);
+  } catch(e) {
+    var out2 = document.getElementById('cmd-output');
+    out2.style.display = 'block';
+    out2.textContent = 'Error: ' + e.message;
+  }
+  document.getElementById('btn-cmd').disabled = false;
+}
+
+async function loadConfig() {
+  try {
+    var d = await api('/config');
+    configData = d;
+    originalSettings = {};
+    var ks = Object.keys(d.settings || {});
+    for (var i = 0; i < ks.length; i++) originalSettings[ks[i]] = d.settings[ks[i]];
+    document.getElementById('cfg-path').textContent = d.filePath || '-';
+    renderConfig(d.categories, d.settings);
+  } catch(e) { showMsg('cfg-message', 'error', '加载配置失败: '+e.message); }
+}
+function renderConfig(cats, sets) {
+  var h = '';
+  var ce = Object.entries(cats);
+  for (var ci = 0; ci < ce.length; ci++) {
+    var cat = ce[ci][0], kv = ce[ci][1], nm = CAT_NAMES[cat] || cat;
+    h += '<div class="settings-cat"><div class="settings-cat-header" onclick="var b=this.nextElementSibling;b.style.display=b.style.display===\'none\'?\'block\':\'none\'"><span>'+nm+'</span><span>+</span></div><div class="settings-cat-body"><div class="settings-grid">';
+    var ke = Object.entries(kv);
+    for (var ki = 0; ki < ke.length; ki++) {
+      var k = ke[ki][0], v = ke[ki][1] || '';
+      h += '<div class="form-group" id="cfg-row-'+k+'"><label class="form-label">'+(SET_LABELS[k]||k)+' <span style="color:var(--text-secondary);font-size:.73rem">('+k+')</span></label>'+renderCfgInput(k, v, sets[k])+'</div>';
+    }
+    h += '</div></div></div>';
+  }
+  document.getElementById('cfg-categories').innerHTML = h;
+}
+function renderCfgInput(key, value, orig) {
+  var chg = value !== orig ? ' setting-changed' : '';
+  if (key.substring(0,1) === 'b' || key === 'RESTAPIEnabled') {
+    var t = value === 'True' || value === 'true';
+    return '<select class="form-select'+chg+'" onchange="onCfgChange(\''+key+'\',this.value)"><option value="True" '+(t?'selected':'')+'>True</option><option value="False" '+(t?'':'selected')+'>False</option></select>';
+  }
+  if (key === 'DeathPenalty') return '<select class="form-select'+chg+'" onchange="onCfgChange(\''+key+'\',this.value)"><option value="None" '+(value==='None'?'selected':'')+'>None</option><option value="Item" '+(value==='Item'?'selected':'')+'>Item</option><option value="ItemAndEquipment" '+(value==='ItemAndEquipment'?'selected':'')+'>ItemAndEquipment</option><option value="All" '+(value==='All'?'selected':'')+'>All</option></select>';
+  if (key === 'Difficulty') return '<select class="form-select'+chg+'" onchange="onCfgChange(\''+key+'\',this.value)"><option value="None" '+(value==='None'?'selected':'')+'>None</option><option value="Easy">Easy</option><option value="Normal">Normal</option><option value="Hard">Hard</option></select>';
+  if (key === 'AllowConnectPlatform') return '<select class="form-select'+chg+'" onchange="onCfgChange(\''+key+'\',this.value)"><option value="Steam" '+(value==='Steam'?'selected':'')+'>Steam</option><option value="Xbox">Xbox</option><option value="Mac">Mac</option><option value="Steam,Xbox">Steam+Xbox</option><option value="Steam,Xbox,Mac">All</option></select>';
+  var isNum = key.indexOf('Rate') >= 0 || key.indexOf('Speed') >= 0 || key.indexOf('Time') >= 0 || key.indexOf('Hours') >= 0 || key.indexOf('Num') >= 0 || key.indexOf('Max') >= 0 || key.indexOf('Port') >= 0;
+  var type = isNum ? 'number' : 'text';
+  var step = (key.indexOf('Rate') >= 0 || key.indexOf('Speed') >= 0 || key.indexOf('Time') >= 0) ? '0.000001' : '1';
+  return '<input type="'+type+'" step="'+step+'" min="0" class="form-input'+chg+'" value="'+escAttr(value)+'" onchange="onCfgChange(\''+key+'\',this.value)">';
+}
+function onCfgChange(key, value) {
+  if (!configData) return;
+  configData.settings[key] = value;
+  var row = document.getElementById('cfg-row-'+key);
+  if (!row) return;
+  var changed = value !== originalSettings[key];
+  row.classList.toggle('setting-changed', changed);
+  var inp = row.querySelector('input,select');
+  if (inp) inp.classList.toggle('setting-changed', changed);
+}
+var saveConfig = async function() {
+  if (!configData) return;
+  var changes = {};
+  var ks = Object.keys(configData.settings);
+  for (var i = 0; i < ks.length; i++) { if (configData.settings[ks[i]] !== originalSettings[ks[i]]) changes[ks[i]] = configData.settings[ks[i]]; }
+  var cc = Object.keys(changes).length;
+  if (cc === 0) { showMsg('cfg-message', 'info', '没有检测到更改'); return; }
+  if (!confirm('确定要保存 ' + cc + ' 项更改吗？需要重启服务器才能生效。')) return;
+  document.getElementById('btn-save-cfg').disabled = true;
+  try {
+    var r = await api('/config', {method:'PUT', body:JSON.stringify(changes)});
+    if (r.error) { showMsg('cfg-message', 'error', r.error); }
+    else {
+      showMsg('cfg-message', 'success', '已保存 ' + cc + ' 项更改。重启服务器后生效。');
+      originalSettings = {};
+      var rk = Object.keys(r.settings);
+      for (var j = 0; j < rk.length; j++) originalSettings[rk[j]] = r.settings[rk[j]];
+      configData.settings = r.settings;
+      var rows = document.querySelectorAll('.setting-changed');
+      for (var k = 0; k < rows.length; k++) rows[k].classList.remove('setting-changed');
+    }
+  } catch(e) { showMsg('cfg-message', 'error', '保存失败: '+e.message); }
+  document.getElementById('btn-save-cfg').disabled = false;
+};
+var resetConfig = async function() {
+  if (!confirm('确定要重置所有设置为默认值吗？此操作不可撤销！')) return;
+  try { await api('/config/reset', {method:'POST'}); configData = null; await loadConfig(); showMsg('cfg-message', 'warning', '已重置为默认值'); }
+  catch(e) { showMsg('cfg-message', 'error', '重置失败: '+e.message); }
+};
+
+async function refreshUpdate() { await checkUpdate(); }
+async function checkUpdate() {
+  try {
+    var d = await api('/update/check');
+    updateInfo = d;
+    document.getElementById('upd-current').textContent = (d.current && d.current.buildID) ? d.current.buildID : '未知';
+    document.getElementById('upd-latest').textContent = (d.latest && d.latest.buildID) ? d.latest.buildID : 'N/A';
+    if (d.current) {
+      var info = '分支: '+(d.current.branch||'public');
+      if (d.current.lastUpdate) info += '<br>上次更新: '+new Date(d.current.lastUpdate).toLocaleString('zh-CN');
+      document.getElementById('upd-current-info').innerHTML = info;
+    }
+    document.getElementById('upd-latest-info').innerHTML = '分支: '+((d.latest&&d.latest.branch)||'public');
+    var av = document.getElementById('upd-available');
+    if (d.updateAvailable) av.innerHTML = '<div class="alert alert-warning">发现新版本！当前: Build '+d.current.buildID+' &rarr; 最新: Build '+d.latest.buildID+'</div>';
+    else if (d.error) av.innerHTML = '<div class="alert alert-error">检查失败: '+d.error+'</div>';
+    else av.innerHTML = (d.current && d.current.buildID) ? '<div class="alert alert-success">服务器已是最新版本</div>' : '';
+  } catch(e) { showMsg('upd-message', 'error', '检查更新失败: '+e.message); }
+}
+async function runUpdate(validate) {
+  if (!confirm(validate ? '确定要更新并验证游戏文件吗？服务器必须先停止。' : '确定要更新服务器吗？服务器必须先停止。')) return;
+  document.getElementById('upd-progress').innerHTML = '<div class="alert alert-info"><span class="spinner" style="display:inline-block;width:16px;height:16px;margin-right:8px"></span>更新中...</div>';
+  try {
+    var r = await api('/update/run'+(validate?'?validate=true':''), {method:'POST'});
+    document.getElementById('upd-progress').innerHTML = '';
+    if (r.success) {
+      showMsg('upd-message', 'success', '更新完成！Build: '+(r.buildId||'N/A')+' (耗时: '+r.duration+')');
+      document.getElementById('upd-log-card').style.display = 'block';
+      document.getElementById('upd-log').textContent = r.output || '';
+    } else if (r.error && r.error.indexOf('stopped') >= 0) showMsg('upd-message', 'error', '请先停止服务器');
+    else showMsg('upd-message', 'error', r.message || r.error || '更新失败');
+    setTimeout(checkUpdate, 3000);
+  } catch(e) { document.getElementById('upd-progress').innerHTML = ''; showMsg('upd-message', 'error', '更新失败: '+e.message); }
+}
+
+async function loadSchedule() {
+  try {
+    var d = await api('/schedule'); scheduleData = d;
+    document.getElementById('sch-restart-on').checked = d.autoRestart && d.autoRestart.enabled;
+    document.getElementById('sch-restart-cron').value = (d.autoRestart && d.autoRestart.cron) ? d.autoRestart.cron : '0 */6 * * *';
+    document.getElementById('sch-update-on').checked = d.autoUpdate && d.autoUpdate.enabled;
+    document.getElementById('sch-update-cron').value = (d.autoUpdate && d.autoUpdate.cron) ? d.autoUpdate.cron : '0 4 * * *';
+    schChanged();
+  } catch(e) { showMsg('sch-message', 'error', '加载失败: '+e.message); }
+}
+function setupCronPresets() {
+  function rnd(id) {
+    var h = '';
+    for (var i = 0; i < CRON_PRESETS.length; i++) h += '<button class="btn-outline'+(document.getElementById(id).value===CRON_PRESETS[i].value?' active':'')+'" onclick="document.getElementById(\''+id+'\').value=\''+CRON_PRESETS[i].value+'\';schChanged()">'+CRON_PRESETS[i].label+'</button>';
+    return h;
+  }
+  document.getElementById('sch-restart-presets').innerHTML = '<label class="form-label">预设</label><div style="display:flex;flex-wrap:wrap;gap:6px">'+rnd('sch-restart-cron')+'</div>';
+  document.getElementById('sch-update-presets').innerHTML = '<label class="form-label">预设</label><div style="display:flex;flex-wrap:wrap;gap:6px">'+rnd('sch-update-cron')+'</div>';
+}
+function schChanged() {
+  document.getElementById('sch-restart-extra').style.display = document.getElementById('sch-restart-on').checked ? 'block' : 'none';
+  document.getElementById('sch-update-extra').style.display = document.getElementById('sch-update-on').checked ? 'block' : 'none';
+}
+async function saveSchedule() {
+  var body = { autoRestart:{enabled:document.getElementById('sch-restart-on').checked,cron:document.getElementById('sch-restart-cron').value}, autoUpdate:{enabled:document.getElementById('sch-update-on').checked,cron:document.getElementById('sch-update-cron').value} };
+  try {
+    var r = await api('/schedule', {method:'PUT', body:JSON.stringify(body)});
+    if (r.error) showMsg('sch-message', 'error', r.error);
+    else showMsg('sch-message', 'success', '定时任务已保存');
+  } catch(e) { showMsg('sch-message', 'error', '保存失败: '+e.message); }
+}
+
+async function fetchLogs() {
+  if (currentTab !== 'logs') return;
+  try {
+    var lines = document.getElementById('log-lines').value;
+    var d = await api('/logs?lines=' + lines);
+    allLogs = d.logs || [];
+    renderLogs();
+    document.getElementById('log-info').textContent = '共 ' + allLogs.length + ' 行';
+  } catch(e) { document.getElementById('log-content').innerHTML = '<div class="empty">加载失败: '+e.message+'</div>'; }
+}
+function renderLogs() {
+  var f = (document.getElementById('log-filter').value || '').toLowerCase();
+  var logs = f ? allLogs.filter(function(l) { return l.toLowerCase().indexOf(f) >= 0; }) : allLogs;
+  var el = document.getElementById('log-content');
+  if (logs.length === 0) { el.innerHTML = '<div class="empty">' + (f ? '没有匹配的日志' : '暂无日志') + '</div>'; document.getElementById('log-info').textContent = '共 ' + allLogs.length + ' 行' + (f && logs.length !== allLogs.length ? ' (过滤 '+logs.length+' 行)' : ''); return; }
+  var h = '';
+  for (var i = 0; i < logs.length; i++) {
+    var lo = logs[i].toLowerCase();
+    var cls = (lo.indexOf('error') >= 0 || lo.indexOf('fatal') >= 0) ? ' log-error' : (lo.indexOf('warn') >= 0 ? ' log-warn' : '');
+    h += '<div class="log-line'+cls+'">' + escHtml(logs[i]) + '</div>';
+  }
+  el.innerHTML = h;
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('log-info').textContent = '共 ' + allLogs.length + ' 行' + (f && logs.length !== allLogs.length ? ' (过滤 '+logs.length+' 行)' : '');
+}
+function toggleLogAuto() {
+  if (document.getElementById('log-auto').checked) { if (!logTimer) logTimer = setInterval(fetchLogs, 5000); }
+  else if (logTimer) { clearInterval(logTimer); logTimer = null; }
+}
+
+function showMsg(cid, type, text) { document.getElementById(cid).innerHTML = text ? '<div class="alert alert-'+type+'">'+text+'</div>' : ''; }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtBytes(b) {
+  if (!b || b === 0) return '0 B';
+  var k = 1024, sizes = ['B','KB','MB','GB','TB'];
+  var i = Math.floor(Math.log(b) / Math.log(k));
+  return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+</script>
+</body>
+</html>
