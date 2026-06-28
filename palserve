@@ -85,9 +85,6 @@ install_steamcmd() {
     echo -e "${GREEN}检测到系统: ${DISTRO} ${VERSION}${NC}"
     echo -e "${GREEN}正在安装 SteamCMD...${NC}"
 
-    # 清理可能由其他用户创建的 /tmp/dumps（会导致权限警告）
-    [ -d /tmp/dumps ] && sudo rm -rf /tmp/dumps 2>/dev/null || true
-
     case "$DISTRO" in
         ubuntu|linuxmint|pop|elementary|zorin|kubuntu|xubuntu|lubuntu)
             echo -e "${GREEN}[Ubuntu 系] 启用 multiverse 仓库 + apt 安装${NC}"
@@ -178,6 +175,10 @@ install_steamcmd() {
     if command -v steamcmd &>/dev/null || [ -f "/usr/games/steamcmd" ]; then
         STEAMCMD_BIN="$(command -v steamcmd 2>/dev/null || echo /usr/games/steamcmd)"
         echo -e "${GREEN}SteamCMD 安装成功: ${STEAMCMD_BIN}${NC}"
+
+        # 清除 /tmp/dumps 避免权限冲突（steamcmd 要求目录属主为当前用户）
+        rm -rf /tmp/dumps 2>/dev/null || true
+
         echo -e "${GREEN}正在初始化 SteamCMD...${NC}"
         timeout 30 "$STEAMCMD_BIN" +quit 2>/dev/null || true
     else
@@ -443,6 +444,9 @@ do_log() {
 do_install() {
     local FORCE=false
     [ "$1" = "--force" ] && FORCE=true
+
+    # 清除残留的 /tmp/dumps（避免 steamcmd 权限错误）
+    rm -rf /tmp/dumps 2>/dev/null || true
 
     echo -e "${GREEN}=== PalServeManager 一键部署 ===${NC}"
     echo ""
