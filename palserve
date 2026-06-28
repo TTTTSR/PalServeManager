@@ -282,7 +282,9 @@ ensure_not_root() {
     if [ "$(id -u)" = "0" ]; then
         ensure_user
         echo -e "${GREEN}切换为 ${SERVICE_USER} 用户...${NC}"
-        exec sudo -u "$SERVICE_USER" "$0" "$@"
+        # 确保 palworld 用户有完整 PATH
+        local PAL_PATH="/usr/local/bin:/usr/bin:/bin"
+        exec sudo -u "$SERVICE_USER" env "PATH=$PAL_PATH" "$SCRIPT_PATH" "$@"
     fi
 }
 
