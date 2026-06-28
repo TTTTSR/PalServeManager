@@ -19,6 +19,8 @@ func NewUpdateHandler(steamcmd *services.SteamCMDService, pm *services.ProcessMa
 
 // CheckUpdate 检查是否有可用更新。
 func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
+	// 从 REST API 获取当前运行版本
+	h.steamcmd.RefreshInfo(h.pm.GetRestClient())
 	current := h.steamcmd.GetInfo()
 	latest, err := h.steamcmd.CheckForUpdate()
 	if err != nil {

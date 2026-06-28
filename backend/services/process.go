@@ -371,6 +371,13 @@ func (pm *ProcessManager) SetRestClient(client *RestAPIClient) {
 	pm.restClient = client
 }
 
+// GetRestClient 返回 REST API 客户端。
+func (pm *ProcessManager) GetRestClient() *RestAPIClient {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.restClient
+}
+
 // SetManagerAddr 设置控制面板自身监听地址，用于自检 API。
 func (pm *ProcessManager) SetManagerAddr(addr string) {
 	pm.mu.Lock()

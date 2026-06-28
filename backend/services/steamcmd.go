@@ -100,7 +100,6 @@ func (s *SteamCMDService) Update(validate bool) (*UpdateResult, error) {
 	startTime := time.Now()
 
 	args := []string{
-		"+force_install_dir", s.serverDir,
 		"+login", "anonymous",
 		"+app_update", s.appID,
 	}
@@ -147,25 +146,31 @@ func (s *SteamCMDService) Update(validate bool) (*UpdateResult, error) {
 
 // GetInfo 返回当前安装的信息。
 func (s *SteamCMDService) GetInfo() *BuildInfo {
+	info := &BuildInfo{AppID: s.appID}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	info := &BuildInfo{
-		AppID:  s.appID,
-		BuildID: s.currentBuild,
-	}
-
+	info.BuildID = s.currentBuild
 	if s.lastUpdate != nil {
 		info.LastUpdate = s.lastUpdate
 	}
-
-	// 尝试读取 appmanifest 以获取准确的构建 ID
-	if buildID := s.parseManifestBuildID(); buildID != "" {
-		info.BuildID = buildID
-		s.currentBuild = buildID
-	}
+	s.mu.Unlock()
 
 	return info
+}
+
+// RefreshInfo 通过 REST API 获取当前运行的服务端版本，更新 internal state。
+func (s *SteamCMDService) RefreshInfo(restClient *RestAPIClient) {
+	if restClient == nil {
+		return
+	}
+	serverInfo, err := restClient.GetInfo()
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.currentBuild = serverInfo.Version
+	s.mu.Unlock()
 }
 
 // IsUpdating 如果有更新正在进行，返回 true。
