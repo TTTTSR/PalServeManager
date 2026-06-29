@@ -53,7 +53,8 @@ sudo -u steam palserve start
 - 配置编辑器 — 可视化编辑 PalWorldSettings.ini，支持所有参数
 - 更新管理 — 通过 SteamCMD 检查更新、手动更新、验证文件
 - 定时任务 — 定时自动重启、自动检查并安装更新
-- 日志查看器 — 实时查看服务器日志，支持过滤和自动刷新
+- 日志查看器 — 实时查看服务器日志，支持面板/服务端日志切换
+- 存档管理 — 备份和恢复世界存档，恢复前自动备份当前存档（未测试）
 
 ## 目录结构
 
@@ -140,6 +141,9 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 | PUT | `/api/schedule` | 更新定时任务 |
 | GET | `/api/health` | 健康检查 |
 | WS | `/api/ws` | WebSocket 状态推送 |
+| GET | `/api/backup/list` | 备份列表 |
+| POST | `/api/backup/create` | 创建备份 |
+| POST | `/api/backup/restore` | 恢复备份 |
 
 ## 注意事项
 
@@ -153,7 +157,7 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 - [ ] 支持多发行版一键安装脚本
 - [ ] 前端 i18n 国际化
 - [ ] 服务端崩溃自动拉起
-- [ ] 存档管理，自动备份与回退
+- [ ] 存档管理（已实现，未测试）
 - [ ] 管理面板登录认证
 - [ ] HTTPS 支持
 
