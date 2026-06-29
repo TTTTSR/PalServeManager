@@ -96,7 +96,7 @@ func main() {
 	configHandler := handlers.NewConfigHandler(cfg.ConfigDir)
 	updateHandler := handlers.NewUpdateHandler(steamcmdService, processManager)
 	monitorHandler := handlers.NewMonitorHandler(monitor)
-logHandler := handlers.NewLogHandler(monitor)
+logHandler := handlers.NewLogHandler(monitor, cfg.PanelLogDir)
 
 	scheduleSaveCallback := func(newCfg *config.Config) error {
 		return config.Save(configPath, newCfg)
