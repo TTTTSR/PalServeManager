@@ -13,19 +13,21 @@ curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/install
 部署完成后启动：
 
 ```bash
-palserve start -d
+#推荐直接使用安装steamcmd的steam用户启动
+sudo -u steam palserve start -d
 ```
 
 访问 `http://<服务器IP>:8080` 进入管理面板。
 
 ## 非 Debian 系发行版
 
-需要手动安装 SteamCMD 后拉取脚本和程序：
+需要手动安装 SteamCMD和服务端 后拉取脚本和程序：
 
 ```bash
 # 1. 根据你的发行版安装 SteamCMD（参见 https://developer.valvesoftware.com/wiki/SteamCMD）
 #    RHEL/CentOS/Fedora: yum install steamcmd
 #    Arch: AUR makepkg 或 Valve 官方 tar.gz
+#    后续全程请使用安装steamcmd时创建的steam用户进行
 
 # 2. 拉取管理脚本和二进制
 sudo mkdir -p /opt/palworld-manager/logs
@@ -34,8 +36,7 @@ sudo curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/pa
 sudo chmod +x /opt/palworld-manager/palservemanage.sh /opt/palworld-manager/palworld-manager-linux
 sudo ln -sf /opt/palworld-manager/palservemanage.sh /usr/local/bin/palserve
 
-# 3. 创建 steam 用户并授予权限
-sudo useradd -m steam
+# 3. 授予steam用户权限
 sudo chown -R steam:steam /opt/palworld-manager
 
 # 4. 启动
@@ -94,40 +95,24 @@ palworldserve/
 
 ### 配置 Palworld 服务器
 
-编辑生成的配置文件：
+**重要**：REST API 默认为关闭状态，管理面板依赖 REST API 获取服务器信息。首次启动后必须手动启用：
+
+1. 首次启动 PalServer 生成配置文件后停止
+2. 编辑 `PalWorldSettings.ini`，将 `RESTAPIEnabled` 设为 `True`
+3. 重启服务器，管理面板即可正常获取信息
 
 ```bash
 # 首次运行 PalServer 会自动生成配置文件，或手动复制默认配置
 cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini
+
+# 编辑配置文件，确保 REST API 已启用
+# RESTAPIEnabled=True
+# RESTAPIPort=8212
 ```
-
-### Systemd 服务（可选）
-
-```bash
-sudo tee /etc/systemd/system/palworld-manager.service << EOF
-[Unit]
-Description=Palworld Server Manager
-After=network.target
-
-[Service]
-Type=simple
-User=steam
-WorkingDirectory=/opt/palworld-manager
-ExecStart=/opt/palworld-manager/palservemanage.sh start
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now palworld-manager
 ```
 
 ## API 接口
 
-所有 API 无需认证（类似 frp 面板风格）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
