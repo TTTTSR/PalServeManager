@@ -97,6 +97,14 @@ func main() {
 	updateHandler := handlers.NewUpdateHandler(steamcmdService, processManager)
 	monitorHandler := handlers.NewMonitorHandler(monitor)
 logHandler := handlers.NewLogHandler(monitor, cfg.PanelLogDir)
+	// 存档备份
+	backupDir := cfg.BackupDir
+	if backupDir == "" {
+		exePath, _ := os.Executable()
+		backupDir = filepath.Join(filepath.Dir(exePath), "Saved")
+	}
+	os.MkdirAll(backupDir, 0755)
+	backupHandler := handlers.NewBackupHandler(processManager, restClient, cfg.SaveDir, backupDir)
 
 	scheduleSaveCallback := func(newCfg *config.Config) error {
 		return config.Save(configPath, newCfg)
@@ -148,6 +156,10 @@ logHandler := handlers.NewLogHandler(monitor, cfg.PanelLogDir)
 	// 计划任务
 	api.HandleFunc("/schedule", scheduleHandler.GetSchedule).Methods("GET")
 	api.HandleFunc("/schedule", scheduleHandler.UpdateSchedule).Methods("PUT")
+	// 存档备份
+	api.HandleFunc("/backup/list", backupHandler.List).Methods("GET")
+	api.HandleFunc("/backup/create", backupHandler.Create).Methods("POST")
+	api.HandleFunc("/backup/restore", backupHandler.Restore).Methods("POST")
 
 	// 面板配置
 	api.HandleFunc("/panel-config", panelConfigHandler.GetConfig).Methods("GET")

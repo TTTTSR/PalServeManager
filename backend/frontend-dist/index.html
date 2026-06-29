@@ -126,6 +126,7 @@ tr:hover{background:var(--bg)}
     <button data-tab="config">配置编辑</button>
     <button data-tab="update">更新管理</button>
     <button data-tab="schedule">定时任务</button>
+    <button data-tab="backup">存档管理</button>
     <button data-tab="settings">面板设置</button>
     <button data-tab="logs">日志查看</button>
   </nav>
@@ -266,6 +267,14 @@ tr:hover{background:var(--bg)}
         <div class="form-group"><label class="form-label">最大玩家数</label><input type="number" id="pcfg-maxplayers" placeholder="32"></div>
         <div class="form-group"><label class="form-label">额外启动参数</label><input type="text" id="pcfg-extraargs" placeholder="-useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"></div>
         <button class="btn btn-primary btn-lg" onclick="savePanelConfig()">保存</button>
+      </div>
+    </div>
+
+    <div id="tab-backup" class="tab-content">
+      <div id="bak-message"></div>
+      <div class="card">
+        <h2>存档备份 <button class="btn btn-success btn-sm" onclick="createBackup()" id="btn-bak-create">创建备份</button></h2>
+        <div id="bak-list"><div class="empty">加载中...</div></div>
       </div>
     </div>
 
@@ -428,6 +437,7 @@ function switchTab(id) {
   if (id === 'config' && !configData) loadConfig();
   if (id === 'update' && !updateInfo) refreshUpdate();
   if (id === 'schedule' && !scheduleData) loadSchedule();
+  if (id === 'backup') loadBackups();
   if (id === 'settings') loadPanelConfig();
   if (id === 'logs') fetchLogs();
 }
@@ -843,6 +853,44 @@ async function savePanelConfig() {
     if (r.error) showMsg("pcfg-message", "error", r.error);
     else showMsg("pcfg-message", "success", r.message || "已保存，重启后生效");
   } catch(e) { showMsg("pcfg-message", "error", "保存失败: "+e.message); }
+}
+
+async function loadBackups() {
+  try {
+    var d = await api("/backup/list");
+    var list = d.backups || [];
+    if (list.length === 0) {
+      document.getElementById("bak-list").innerHTML = "<div class=\"empty\">暂无备份</div>";
+      return;
+    }
+    var h = "<table><thead><tr><th>备份时间</th><th>操作</th></tr></thead><tbody>";
+    for (var i = 0; i < list.length; i++) {
+      h += "<tr><td>" + list[i] + "</td><td><button class=\"btn btn-warning btn-sm\" onclick=\"restoreBackup('" + list[i] + "')\">恢复</button></td></tr>";
+    }
+    h += "</tbody></table>";
+    document.getElementById("bak-list").innerHTML = h;
+  } catch(e) { showMsg("bak-message", "error", "加载失败: "+e.message); }
+}
+
+async function createBackup() {
+  document.getElementById("btn-bak-create").disabled = true;
+  try {
+    var r = await api("/backup/create", {method:"POST"});
+    if (r.error) showMsg("bak-message", "error", r.error);
+    else { showMsg("bak-message", "success", "备份完成: " + r.name); loadBackups(); }
+  } catch(e) { showMsg("bak-message", "error", "备份失败: "+e.message); }
+  document.getElementById("btn-bak-create").disabled = false;
+}
+
+async function restoreBackup(name) {
+  if (!confirm("确定恢复到 " + name + " 吗？
+
+将停止服务器、覆盖当前存档。")) return;
+  try {
+    var r = await api("/backup/restore", {method:"POST", body:JSON.stringify({name:name})});
+    if (r.error) showMsg("bak-message", "error", r.error);
+    else showMsg("bak-message", "success", r.message);
+  } catch(e) { showMsg("bak-message", "error", "恢复失败: "+e.message); }
 }
 
 async function fetchLogs() {

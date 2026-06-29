@@ -19,6 +19,7 @@ type Config struct {
 	SaveDir          string `json:"saveDir"`
 	LogDir           string `json:"logDir"`
 	PanelLogDir      string `json:"panelLogDir"`
+	BackupDir        string `json:"backupDir"`
 
 	// SteamCMD 更新管理
 	SteamCMDPath  string `json:"steamCmdPath"`
@@ -59,6 +60,7 @@ func DefaultConfig() *Config {
 		SaveDir:           "",
 		LogDir:            "",
 		PanelLogDir:       "/opt/palworld-manager/logs",
+		BackupDir:         "",
 		SteamCMDPath:      "/usr/games/steamcmd",
 		PalServerAppID:    "2394010",
 		RestAPIHost:       "127.0.0.1",
