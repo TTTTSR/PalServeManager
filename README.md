@@ -7,7 +7,7 @@
 **仅支持 Debian 系发行版**（Ubuntu、Debian、Mint 等）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/installplaserve.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/TTTTSR/PalServeManager/main/installpalserve.sh | sudo bash
 ```
 
 部署完成后启动：
@@ -84,7 +84,7 @@ palworldserve/
 │       └── index.html         # 内嵌前端单文件
 ├── palserve                   # 一键部署脚本
 ├── palservemanage.sh          # 服务管理脚本
-├── installplaserve.sh         # Debian 系安装脚本
+├── installpalserve.sh         # Debian 系安装脚本
 └── palworld-manager-linux     # 预编译 Linux 二进制
 ```
 
