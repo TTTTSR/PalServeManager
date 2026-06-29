@@ -4,6 +4,8 @@
 
 ## 一键部署
 
+> 注意：SteamCMD 下载服务端（约 20GB）时可能出现速度异常缓慢的情况，通常重试一次即可恢复正常。
+
 **仅支持 Debian 系发行版**（Ubuntu、Debian、Mint 等）：
 
 ```bash
@@ -28,6 +30,7 @@ sudo -u steam palserve start -d
 #    RHEL/CentOS/Fedora: yum install steamcmd
 #    Arch: AUR makepkg 或 Valve 官方 tar.gz
 #    后续全程请使用安装steamcmd时创建的steam用户进行
+sudo -u steam ./steamcmd +login anonymous +app_update 2394010 validate +quit #安装游戏服务端
 
 # 2. 拉取管理脚本和二进制
 sudo mkdir -p /opt/palworld-manager/logs
@@ -83,7 +86,6 @@ palworldserve/
 │   │   └── logging.go         # 请求日志中间件
 │   └── frontend-dist/
 │       └── index.html         # 内嵌前端单文件
-├── palserve                   # 一键部署脚本
 ├── palservemanage.sh          # 服务管理脚本
 ├── installpalserve.sh         # Debian 系安装脚本
 └── palworld-manager-linux     # 预编译 Linux 二进制
@@ -108,7 +110,6 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 # 编辑配置文件，确保 REST API 已启用
 # RESTAPIEnabled=True
 # RESTAPIPort=8212
-```
 ```
 
 ## API 接口
