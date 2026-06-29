@@ -126,6 +126,7 @@ tr:hover{background:var(--bg)}
     <button data-tab="config">配置编辑</button>
     <button data-tab="update">更新管理</button>
     <button data-tab="schedule">定时任务</button>
+    <button data-tab="settings">面板设置</button>
     <button data-tab="logs">日志查看</button>
   </nav>
 
@@ -232,6 +233,25 @@ tr:hover{background:var(--bg)}
         <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-update-on" onchange="schChanged()"><span>启用自动更新</span></label></div>
       </div>
       <button class="btn btn-primary btn-lg" onclick="saveSchedule()">保存</button>
+    </div>
+
+    <div id="tab-settings" class="tab-content">
+      <div id="pcfg-message"></div>
+      <div class="card">
+        <h2>管理面板配置</h2>
+        <p style="color:var(--text-secondary);font-size:.8rem;margin-bottom:14px">修改后需重启面板生效。</p>
+        <div class="form-group"><label class="form-label">监听地址</label><input type="text" id="pcfg-host" placeholder="0.0.0.0"></div>
+        <div class="form-group"><label class="form-label">监听端口</label><input type="number" id="pcfg-port" placeholder="8080"></div>
+        <div class="form-group"><label class="form-label">PalServer 目录</label><input type="text" id="pcfg-serverdir" placeholder="/home/steam/.steam/steam/steamapps/common/PalServer"></div>
+        <div class="form-group"><label class="form-label">PalServer 启动脚本</label><input type="text" id="pcfg-binary" placeholder="PalServer.sh"></div>
+        <div class="form-group"><label class="form-label">SteamCMD 路径</label><input type="text" id="pcfg-steamcmd" placeholder="/usr/games/steamcmd"></div>
+        <div class="form-group"><label class="form-label">REST API 地址</label><input type="text" id="pcfg-resthost" placeholder="127.0.0.1"></div>
+        <div class="form-group"><label class="form-label">REST API 端口</label><input type="number" id="pcfg-restport" placeholder="8212"></div>
+        <div class="form-group"><label class="form-label">游戏端口</label><input type="number" id="pcfg-gameport" placeholder="8211"></div>
+        <div class="form-group"><label class="form-label">最大玩家数</label><input type="number" id="pcfg-maxplayers" placeholder="32"></div>
+        <div class="form-group"><label class="form-label">额外启动参数</label><input type="text" id="pcfg-extraargs" placeholder="-useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"></div>
+        <button class="btn btn-primary btn-lg" onclick="savePanelConfig()">保存</button>
+      </div>
     </div>
 
     <div id="tab-logs" class="tab-content">
@@ -392,6 +412,7 @@ function switchTab(id) {
   if (id === 'config' && !configData) loadConfig();
   if (id === 'update' && !updateInfo) refreshUpdate();
   if (id === 'schedule' && !scheduleData) loadSchedule();
+  if (id === 'settings') loadPanelConfig();
   if (id === 'logs') fetchLogs();
 }
 
@@ -763,6 +784,42 @@ async function saveSchedule() {
     if (r.error) showMsg('sch-message', 'error', r.error);
     else showMsg('sch-message', 'success', '已保存');
   } catch(e) { showMsg('sch-message', 'error', '保存失败: '+e.message); }
+}
+
+async function loadPanelConfig() {
+  try {
+    var d = await api("/panel-config");
+    document.getElementById("pcfg-host").value = d.host || "0.0.0.0";
+    document.getElementById("pcfg-port").value = d.port || 8080;
+    document.getElementById("pcfg-serverdir").value = d.palServerDir || "";
+    document.getElementById("pcfg-binary").value = d.palServerBinary || "PalServer.sh";
+    document.getElementById("pcfg-steamcmd").value = d.steamCmdPath || "";
+    document.getElementById("pcfg-resthost").value = d.restApiHost || "127.0.0.1";
+    document.getElementById("pcfg-restport").value = d.restApiPort || 8212;
+    document.getElementById("pcfg-gameport").value = d.serverPort || 8211;
+    document.getElementById("pcfg-maxplayers").value = d.maxPlayers || 32;
+    document.getElementById("pcfg-extraargs").value = d.extraArgs || "";
+  } catch(e) { showMsg("pcfg-message", "error", "加载失败: "+e.message); }
+}
+
+async function savePanelConfig() {
+  var body = {
+    host: document.getElementById("pcfg-host").value,
+    port: parseInt(document.getElementById("pcfg-port").value) || 8080,
+    palServerDir: document.getElementById("pcfg-serverdir").value,
+    palServerBinary: document.getElementById("pcfg-binary").value,
+    steamCmdPath: document.getElementById("pcfg-steamcmd").value,
+    restApiHost: document.getElementById("pcfg-resthost").value,
+    restApiPort: parseInt(document.getElementById("pcfg-restport").value) || 8212,
+    serverPort: parseInt(document.getElementById("pcfg-gameport").value) || 8211,
+    maxPlayers: parseInt(document.getElementById("pcfg-maxplayers").value) || 32,
+    extraArgs: document.getElementById("pcfg-extraargs").value
+  };
+  try {
+    var r = await api("/panel-config", {method:"PUT", body:JSON.stringify(body)});
+    if (r.error) showMsg("pcfg-message", "error", r.error);
+    else showMsg("pcfg-message", "success", r.message || "已保存，重启后生效");
+  } catch(e) { showMsg("pcfg-message", "error", "保存失败: "+e.message); }
 }
 
 async function fetchLogs() {

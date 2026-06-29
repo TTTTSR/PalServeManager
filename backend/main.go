@@ -102,6 +102,7 @@ func main() {
 		return config.Save(configPath, newCfg)
 	}
 	scheduleHandler := handlers.NewScheduleHandler(cfg, scheduleSaveCallback)
+	panelConfigHandler := handlers.NewPanelConfigHandler(cfg, scheduleSaveCallback)
 
 	// 初始化 WebSocket Hub
 	wsHub := services.GetWSHub()
@@ -147,6 +148,10 @@ func main() {
 	// 计划任务
 	api.HandleFunc("/schedule", scheduleHandler.GetSchedule).Methods("GET")
 	api.HandleFunc("/schedule", scheduleHandler.UpdateSchedule).Methods("PUT")
+
+	// 面板配置
+	api.HandleFunc("/panel-config", panelConfigHandler.GetConfig).Methods("GET")
+	api.HandleFunc("/panel-config", panelConfigHandler.UpdateConfig).Methods("PUT")
 
 	// WebSocket 状态推送
 	api.HandleFunc("/ws", wsHub.HandleWS)
