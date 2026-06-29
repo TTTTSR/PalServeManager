@@ -223,6 +223,18 @@ func main() {
 		})
 	}
 
+	if cfg.AutoSaveEnabled && cfg.AutoSaveCron != "" {
+		cronScheduler.AddFunc(cfg.AutoSaveCron, func() {
+			if processManager.IsRunning() && restClient != nil {
+				if err := restClient.SaveGame(); err != nil {
+					schedLog.Error("自动存档失败: %v", err)
+				} else {
+					schedLog.Info("自动存档完成")
+				}
+			}
+		})
+	}
+
 	cronScheduler.Start()
 
 	// 启动 HTTP 服务器

@@ -43,6 +43,8 @@ type Config struct {
 	AutoRestartCron     string `json:"autoRestartCron"`
 	AutoUpdateEnabled   bool   `json:"autoUpdateEnabled"`
 	AutoUpdateCron      string `json:"autoUpdateCron"`
+	AutoSaveEnabled     bool   `json:"autoSaveEnabled"`
+	AutoSaveCron        string `json:"autoSaveCron"`
 }
 
 // DefaultConfig 返回一个适用于 Linux 的合理默认配置。
@@ -70,6 +72,8 @@ func DefaultConfig() *Config {
 		AutoRestartCron:   "0 */6 * * *",
 		AutoUpdateEnabled:  false,
 		AutoUpdateCron:    "0 4 * * *",
+		AutoSaveEnabled:   false,
+		AutoSaveCron:      "*/15 * * * *",
 	}
 }
 

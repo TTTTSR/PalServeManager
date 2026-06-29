@@ -232,6 +232,21 @@ tr:hover{background:var(--bg)}
         <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">每 30 分钟检查一次更新，若有新版本则自动更新（更新前会自动存档并停止服务器）。</p>
         <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-update-on" onchange="schChanged()"><span>启用自动更新</span></label></div>
       </div>
+      <div class="card">
+        <h2>定时存档</h2>
+        <p style="color:var(--text-secondary);font-size:.82rem;margin-bottom:12px">通过 REST API 定时通知服务器保存世界存档。</p>
+        <div class="form-group"><label class="checkbox"><input type="checkbox" id="sch-save-on" onchange="schChanged()"><span>启用定时存档</span></label></div>
+        <div id="sch-save-extra" style="display:none">
+          <div class="form-group">
+            <label class="form-label">存档间隔</label>
+            <select id="sch-save-minutes" onchange="schChanged()">
+              <option value="5">每 5 分钟</option><option value="10">每 10 分钟</option>
+              <option value="15" selected>每 15 分钟</option><option value="30">每 30 分钟</option>
+              <option value="60">每 60 分钟</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <button class="btn btn-primary btn-lg" onclick="saveSchedule()">保存</button>
     </div>
 
@@ -766,18 +781,25 @@ async function loadSchedule() {
     var match = cron.match(/\*\/(\d+)/);
     document.getElementById('sch-restart-hours').value = match ? match[1] : '6';
     document.getElementById('sch-update-on').checked = d.autoUpdate && d.autoUpdate.enabled;
+    document.getElementById('sch-save-on').checked = d.autoSave && d.autoSave.enabled;
+    var scron = (d.autoSave && d.autoSave.cron) ? d.autoSave.cron : '*/15 * * * *';
+    var smatch = scron.match(/\*\/(\d+)/);
+    document.getElementById('sch-save-minutes').value = smatch ? smatch[1] : '15';
     schChanged();
   } catch(e) { showMsg('sch-message', 'error', '加载失败: '+e.message); }
 }
 function setupCronPresets() {}
 function schChanged() {
   document.getElementById('sch-restart-extra').style.display = document.getElementById('sch-restart-on').checked ? 'block' : 'none';
+  document.getElementById('sch-save-extra').style.display = document.getElementById('sch-save-on').checked ? 'block' : 'none';
 }
 async function saveSchedule() {
   var hours = document.getElementById('sch-restart-hours').value;
+  var mins = document.getElementById('sch-save-minutes').value;
   var body = {
     autoRestart: {enabled: document.getElementById('sch-restart-on').checked, cron: '0 */' + hours + ' * * *'},
-    autoUpdate: {enabled: document.getElementById('sch-update-on').checked, cron: '*/30 * * * *'}
+    autoUpdate: {enabled: document.getElementById('sch-update-on').checked, cron: '*/30 * * * *'},
+    autoSave: {enabled: document.getElementById('sch-save-on').checked, cron: '*/' + mins + ' * * * *'}
   };
   try {
     var r = await api('/schedule', {method:'PUT', body:JSON.stringify(body)});

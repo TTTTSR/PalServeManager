@@ -29,6 +29,10 @@ func (h *ScheduleHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 			"enabled": h.cfg.AutoUpdateEnabled,
 			"cron":    h.cfg.AutoUpdateCron,
 		},
+		"autoSave": map[string]interface{}{
+			"enabled": h.cfg.AutoSaveEnabled,
+			"cron":    h.cfg.AutoSaveCron,
+		},
 	})
 }
 
@@ -43,6 +47,10 @@ func (h *ScheduleHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request)
 			Enabled *bool   `json:"enabled"`
 			Cron    *string `json:"cron"`
 		} `json:"autoUpdate"`
+		AutoSave *struct {
+			Enabled *bool   `json:"enabled"`
+			Cron    *string `json:"cron"`
+		} `json:"autoSave"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,6 +78,17 @@ func (h *ScheduleHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request)
 		}
 		if req.AutoUpdate.Cron != nil {
 			h.cfg.AutoUpdateCron = *req.AutoUpdate.Cron
+			changed = true
+		}
+	}
+
+	if req.AutoSave != nil {
+		if req.AutoSave.Enabled != nil {
+			h.cfg.AutoSaveEnabled = *req.AutoSave.Enabled
+			changed = true
+		}
+		if req.AutoSave.Cron != nil {
+			h.cfg.AutoSaveCron = *req.AutoSave.Cron
 			changed = true
 		}
 	}
