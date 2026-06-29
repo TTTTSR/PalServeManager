@@ -1,3 +1,6 @@
+# Deprecated
+palserve
+
 # Go build artifacts
 backend/palworld-manager
 backend/palworld-manager.exe
