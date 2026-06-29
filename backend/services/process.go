@@ -25,7 +25,6 @@ const (
 	StatusNotInstalled ServerStatus = "not_installed"
 	StatusInstalling   ServerStatus = "installing"
 	StatusUpdating     ServerStatus = "updating"
-	StatusError        ServerStatus = "error"
 )
 
 // ProcessInfo 包含运行中服务器进程的信息。
@@ -123,7 +122,7 @@ func (pm *ProcessManager) Start() error {
 	logPath := filepath.Join(palLogDir, fmt.Sprintf("server-%s.log", time.Now().Format("2006-01-02-150405")))
 	palLogFile, err := os.Create(logPath)
 	if err != nil {
-		pm.setStatus(StatusError)
+		pm.setStatus(StatusStopped)
 		log.Error("创建日志文件失败: %v", err)
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
@@ -135,7 +134,7 @@ func (pm *ProcessManager) Start() error {
 	consoleFile, err := os.OpenFile(consolePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		palLogFile.Close()
-		pm.setStatus(StatusError)
+		pm.setStatus(StatusStopped)
 		log.Error("创建控制台日志文件失败: %v", err)
 		return fmt.Errorf("failed to create console log: %w", err)
 	}
@@ -148,7 +147,7 @@ func (pm *ProcessManager) Start() error {
 	pm.cmd.Stderr = io.MultiWriter(palLogFile, consoleFile)
 
 	if err := pm.cmd.Start(); err != nil {
-		pm.setStatus(StatusError)
+		pm.setStatus(StatusStopped)
 		palLogFile.Close()
 		consoleFile.Close()
 		log.Error("启动失败: %v", err)
@@ -176,8 +175,8 @@ func (pm *ProcessManager) Start() error {
 		if pm.status == StatusRunning {
 			if err != nil {
 				log.Error("服务器进程异常退出 (PID: %d): %v", pm.pid, err)
-				pm.setStatus(StatusError)
-				BroadcastStatusGlobal("error")
+				pm.setStatus(StatusStopped)
+				BroadcastStatusGlobal("stopped")
 			} else {
 				log.Info("服务器进程正常退出 (PID: %d)", pm.pid)
 				pm.setStatus(StatusStopped)

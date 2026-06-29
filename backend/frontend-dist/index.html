@@ -462,7 +462,7 @@ async function refreshControls() {
       }).catch(function(){});
       return;
     }
-    var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',installing:'安装中',error:'错误'};
+    var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',installing:'安装中',stopped:'已停止'};
     document.getElementById('ctrl-status').textContent = labels[st] || st;
     document.getElementById('ctrl-status').className = 'status-badge ' + st;
     document.getElementById('ctrl-uptime').textContent = s.uptime ? '运行时间: ' + s.uptime : '';
@@ -529,7 +529,7 @@ function renderPlayerList() {
 function updateHeaderStatus(s) {
   var el = document.getElementById('header-status');
   if (!s || !s.status) { el.innerHTML = ''; return; }
-  var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',not_installed:'未安装',installing:'安装中',error:'错误'};
+  var labels = {running:'运行中',stopped:'已停止',starting:'启动中',stopping:'停止中',not_installed:'未安装',installing:'安装中',stopped:'已停止'};
   el.textContent = labels[s.status] || s.status;
   el.className = 'status-badge ' + (s.status||'');
   if (s.status === 'running' && s.playerCount !== undefined) {

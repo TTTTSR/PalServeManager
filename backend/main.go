@@ -86,6 +86,9 @@ func main() {
 	processManager.SetRestClient(restClient)
 	processManager.SetManagerAddr(fmt.Sprintf("127.0.0.1:%d", cfg.Port))
 
+	// 启动后台状态轮询
+	processManager.StartPolling()
+
 	monitor := services.NewMonitor(processManager, restClient, cfg.PalServerDir)
 
 	// 初始化处理器
