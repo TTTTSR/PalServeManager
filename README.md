@@ -153,7 +153,7 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 - [ ] 支持多发行版一键安装脚本
 - [ ] 前端 i18n 国际化
 - [ ] 服务端崩溃自动拉起
-- [ ] 存档自动备份
+- [ ] 存档管理，自动备份与回退
 - [ ] 管理面板登录认证
 - [ ] HTTPS 支持
 
