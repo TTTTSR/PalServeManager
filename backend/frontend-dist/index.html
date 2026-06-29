@@ -276,6 +276,7 @@ tr:hover{background:var(--bg)}
             <select id="log-lines" onchange="fetchLogs()" style="width:80px"><option value="50">50</option><option value="100" selected>100</option><option value="200">200</option><option value="500">500</option></select>
             <input type="text" id="log-filter" placeholder="过滤关键词..." oninput="renderLogs()" style="width:160px;padding:6px 10px">
             <label class="checkbox"><input type="checkbox" id="log-auto" checked onchange="toggleLogAuto()">自动刷新</label>
+            <select id="log-source" onchange="fetchLogs()" style="width:100px"><option value="server">服务端日志</option><option value="panel">面板日志</option></select>
             <button class="btn btn-sm btn-primary" onclick="fetchLogs()">刷新</button>
           </div>
         </h2>
@@ -848,7 +849,8 @@ async function fetchLogs() {
   if (currentTab !== 'logs') return;
   try {
     var lines = document.getElementById('log-lines').value;
-    var d = await api('/logs?lines=' + lines);
+    var src = document.getElementById('log-source').value;
+    var d = await api('/logs?lines=' + lines + '&source=' + src);
     allLogs = d.logs || [];
     renderLogs();
     document.getElementById('log-info').textContent = '共 ' + allLogs.length + ' 行';
