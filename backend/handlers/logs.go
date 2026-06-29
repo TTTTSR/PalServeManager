@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"palworldserve/services"
@@ -12,13 +11,12 @@ import (
 
 // LogHandler 处理服务器日志相关的端点。
 type LogHandler struct {
-	monitor  *services.Monitor
-	panelLog string // 管理面板自身日志目录
+	monitor *services.Monitor
 }
 
 // NewLogHandler 创建一个新的 LogHandler。
 func NewLogHandler(monitor *services.Monitor) *LogHandler {
-	return &LogHandler{monitor: monitor, panelLog: services.LogDir()}
+	return &LogHandler{monitor: monitor}
 }
 
 // GetLogs 返回最近的日志条目。source=panel 返回面板日志，否则返回服务器日志。
@@ -54,23 +52,11 @@ func (h *LogHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LogHandler) getPanelLogs(lines int) ([]string, error) {
-	// 查找最新日志文件
-	entries, err := os.ReadDir(h.panelLog)
+	// 面板日志固定路径: /opt/palworld-manager/logs/manager.log
+	const logPath = "/opt/palworld-manager/logs/manager.log"
+	f, err := os.Open(logPath)
 	if err != nil {
-		return nil, err
-	}
-	var latest string
-	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".log" {
-			latest = filepath.Join(h.panelLog, e.Name())
-		}
-	}
-	if latest == "" {
 		return []string{}, nil
-	}
-	f, err := os.Open(latest)
-	if err != nil {
-		return nil, err
 	}
 	defer f.Close()
 	var result []string
