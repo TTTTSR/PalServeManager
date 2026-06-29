@@ -148,6 +148,15 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 3. 更新前需停止服务器 — SteamCMD 更新需要服务器处于已停止状态
 4. 防火墙端口 — 确保开放 8211 (UDP)、8212 (TCP, REST API) 和管理面板端口
 5. 目前版本还未经过完善测试，可能出现各类问题，欢迎指正
+## 待办
+
+- [ ] 支持多发行版一键安装脚本
+- [ ] 前端 i18n 国际化
+- [ ] 服务端崩溃自动拉起
+- [ ] 存档自动备份
+- [ ] 管理面板登录认证
+- [ ] HTTPS 支持
+
 ## 许可
 
 MIT License
