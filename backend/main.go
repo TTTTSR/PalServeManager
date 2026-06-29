@@ -160,6 +160,7 @@ logHandler := handlers.NewLogHandler(monitor, cfg.PanelLogDir)
 	api.HandleFunc("/backup/list", backupHandler.List).Methods("GET")
 	api.HandleFunc("/backup/create", backupHandler.Create).Methods("POST")
 	api.HandleFunc("/backup/restore", backupHandler.Restore).Methods("POST")
+		api.HandleFunc("/backup/delete", backupHandler.Delete).Methods("POST")
 
 	// 面板配置
 	api.HandleFunc("/panel-config", panelConfigHandler.GetConfig).Methods("GET")

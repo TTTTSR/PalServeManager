@@ -865,7 +865,7 @@ async function loadBackups() {
     }
     var h = "<table><thead><tr><th>备份时间</th><th>操作</th></tr></thead><tbody>";
     for (var i = 0; i < list.length; i++) {
-      h += "<tr><td>" + list[i] + "</td><td><button class=\"btn btn-warning btn-sm\" onclick=\"restoreBackup('" + list[i] + "')\">恢复</button></td></tr>";
+      h += "<tr><td>" + list[i] + "</td><td><button class=\"btn btn-warning btn-sm\" onclick=\"restoreBackup('" + list[i] + "')\">恢复</button> <button class=\"btn btn-danger btn-sm\" onclick=\"deleteBackup('" + list[i] + "')\">删除</button></td></tr>";
     }
     h += "</tbody></table>";
     document.getElementById("bak-list").innerHTML = h;
@@ -889,6 +889,15 @@ async function restoreBackup(name) {
     if (r.error) showMsg("bak-message", "error", r.error);
     else showMsg("bak-message", "success", r.message);
   } catch(e) { showMsg("bak-message", "error", "恢复失败: "+e.message); }
+}
+
+async function deleteBackup(name) {
+  if (!confirm("确定删除备份 " + name + " 吗？此操作不可撤销。")) return;
+  try {
+    var r = await api("/backup/delete", {method:"POST", body:JSON.stringify({name:name})});
+    if (r.error) showMsg("bak-message", "error", r.error);
+    else { showMsg("bak-message", "success", r.message); loadBackups(); }
+  } catch(e) { showMsg("bak-message", "error", "删除失败: "+e.message); }
 }
 
 async function fetchLogs() {

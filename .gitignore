@@ -1,5 +1,6 @@
 # Deprecated
 palserve
+ignore/
 
 # Go build artifacts
 backend/palworld-manager

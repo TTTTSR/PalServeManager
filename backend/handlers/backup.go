@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"palworldserve/services"
@@ -19,6 +20,7 @@ type BackupHandler struct {
 	restClient *services.RestAPIClient
 	saveDir    string
 	backupDir  string
+	mu         sync.Mutex // 备份操作锁：Create/Restore/Delete 互斥
 }
 
 // NewBackupHandler 创建一个新的 BackupHandler。
@@ -45,6 +47,9 @@ func (h *BackupHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create 创建新备份。
 func (h *BackupHandler) Create(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if !h.pm.IsInstalled() {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "服务器未安装"})
 		return
@@ -67,6 +72,9 @@ func (h *BackupHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Restore 恢复指定备份。
 func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -117,6 +125,41 @@ func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("已恢复至 %s", req.Name)})
+}
+
+// Delete 删除指定备份。
+func (h *BackupHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请指定备份名称"})
+		return
+	}
+
+	target := filepath.Join(h.backupDir, req.Name)
+	if _, err := os.Stat(target); os.IsNotExist(err) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "备份不存在"})
+		return
+	}
+
+	// 安全检查：防止路径穿越（确保目标在备份目录内）
+	absBackupDir, _ := filepath.Abs(h.backupDir)
+	absTarget, _ := filepath.Abs(target)
+	rel, err := filepath.Rel(absBackupDir, absTarget)
+	if err != nil || len(rel) >= 2 && rel[:2] == ".." {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的备份名称"})
+		return
+	}
+
+	if err := os.RemoveAll(target); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "删除失败: " + err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("已删除备份 %s", req.Name)})
 }
 
 // copyDir 递归复制目录内容。
