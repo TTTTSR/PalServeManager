@@ -55,7 +55,7 @@ sudo -u steam palserve start
 - 定时任务 — 定时自动重启、自动检查并安装更新
 - 日志查看器 — 实时查看服务器日志，支持过滤和自动刷新
 
-## 技术架构
+## 目录结构
 
 ```
 palworldserve/
@@ -147,7 +147,7 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 2. RCON 已弃用 — Palworld 官方已弃用 RCON，本面板使用 REST API (端口 8212)
 3. 更新前需停止服务器 — SteamCMD 更新需要服务器处于已停止状态
 4. 防火墙端口 — 确保开放 8211 (UDP)、8212 (TCP, REST API) 和管理面板端口
-
+5. 目前版本还未经过完善测试，可能出现各类问题，欢迎指正
 ## 许可
 
 MIT License
