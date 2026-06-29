@@ -883,9 +883,7 @@ async function createBackup() {
 }
 
 async function restoreBackup(name) {
-  if (!confirm("确定恢复到 " + name + " 吗？
-
-将停止服务器、覆盖当前存档。")) return;
+  if (!confirm("确定恢复到 " + name + " 吗？将停止服务器、覆盖当前存档。")) return;
   try {
     var r = await api("/backup/restore", {method:"POST", body:JSON.stringify({name:name})});
     if (r.error) showMsg("bak-message", "error", r.error);

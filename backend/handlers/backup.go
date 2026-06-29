@@ -93,6 +93,11 @@ func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 恢复前先备份当前存档
+	preName := time.Now().Format("2006-01-02_15-04-05") + "_恢复前"
+	preDest := filepath.Join(h.backupDir, preName)
+	copyDir(h.saveDir, preDest)
+
 	// 清空当前存档
 	os.RemoveAll(h.saveDir)
 	os.MkdirAll(h.saveDir, 0755)
