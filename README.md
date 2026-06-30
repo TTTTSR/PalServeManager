@@ -4,7 +4,7 @@
 
 ## 一键部署
 
-> 注意：SteamCMD 下载服务端（约 20GB）时可能出现速度异常缓慢的情况，通常重试一次即可恢复正常。
+> 注意：SteamCMD 下载服务端（约 20GB）时可能出现速度异常缓慢的情况，通常重试一次即可恢复正常，因此虽然面板有安装服务端功能但不推荐使用，因为无法观察是否下载异常。
 
 **仅支持 Debian 系发行版**（Ubuntu、Debian、Mint 等）：
 
@@ -54,42 +54,47 @@ sudo -u steam palserve start
 - 更新管理 — 通过 SteamCMD 检查更新、手动更新、验证文件
 - 定时任务 — 定时自动重启、自动检查并安装更新
 - 日志查看器 — 实时查看服务器日志，支持面板/服务端日志切换
-- 存档管理 — 备份和恢复世界存档，恢复前自动备份当前存档（未测试）
+- 存档管理 — 备份、恢复、删除世界存档，恢复前自动备份当前存档
 
 ## 目录结构
 
 ```
 palworldserve/
-├── backend/                    # Go 后端 API 服务
-│   ├── main.go                # 入口，路由，定时任务
+├── backend/                       # Go 后端 API 服务
+│   ├── main.go                    # 入口，路由，定时任务
+│   ├── go.mod / go.sum            # Go 模块依赖
 │   ├── config/
-│   │   └── config.go          # 应用配置管理
+│   │   └── config.go              # 应用配置管理
 │   ├── handlers/
-│   │   ├── server.go          # 服务器控制 API
-│   │   ├── config.go          # 配置管理 API
-│   │   ├── update.go          # 更新管理 API
-│   │   ├── monitor.go         # 监控统计 API
-│   │   ├── logs.go            # 日志 API
-│   │   ├── schedule.go        # 定时任务 API
-│   │   └── helpers.go         # 工具函数
+│   │   ├── server.go              # 服务器控制 API
+│   │   ├── config.go              # 配置管理 API
+│   │   ├── update.go              # 更新管理 API
+│   │   ├── monitor.go             # 监控统计 API
+│   │   ├── logs.go                # 日志 API
+│   │   ├── schedule.go            # 定时任务 API
+│   │   ├── backup.go              # 存档备份/恢复/删除 API
+│   │   ├── panelconfig.go         # 面板配置 API
+│   │   └── helpers.go             # 工具函数
 │   ├── services/
-│   │   ├── process.go         # PalServer 进程管理 + 状态机
-│   │   ├── statemachine.go    # 状态转换表 + 后台轮询
-│   │   ├── steamcmd.go        # SteamCMD 封装
-│   │   ├── restapi.go         # REST API 客户端
-│   │   ├── ini.go             # PalWorldSettings.ini 解析器
-│   │   ├── monitor.go         # 系统/服务器监控
-│   │   ├── logger.go          # 日志系统
-│   │   ├── wshub.go           # WebSocket 推送
-│   │   └── process_signal*.go # 进程信号处理
+│   │   ├── process.go             # PalServer 进程管理 + 状态机
+│   │   ├── statemachine.go        # 状态转换表 + 后台轮询
+│   │   ├── steamcmd.go            # SteamCMD 封装
+│   │   ├── restapi.go             # REST API 客户端
+│   │   ├── rcon.go                # RCON 客户端（已弃用）
+│   │   ├── ini.go                 # PalWorldSettings.ini 解析器
+│   │   ├── monitor.go             # 系统/服务器监控
+│   │   ├── logger.go              # 日志系统
+│   │   ├── wshub.go               # WebSocket 推送
+│   │   └── process_signal*.go     # 进程信号处理（平台适配）
 │   ├── middleware/
-│   │   ├── auth.go            # 认证 & CORS 中间件
-│   │   └── logging.go         # 请求日志中间件
+│   │   ├── auth.go                # 认证 & CORS 中间件
+│   │   └── logging.go             # 请求日志中间件
 │   └── frontend-dist/
-│       └── index.html         # 内嵌前端单文件
-├── palservemanage.sh          # 服务管理脚本
-├── installpalserve.sh         # Debian 系安装脚本
-└── palworld-manager-linux     # 预编译 Linux 二进制
+│       └── index.html             # 内嵌前端单文件
+├── palservemanage.sh              # 服务管理脚本
+├── installpalserve.sh             # Debian 系一键安装脚本
+├── palworld-manager-linux         # 预编译 Linux 二进制
+└── palworld-manager-windows.exe   # 预编译 Windows 二进制
 ```
 
 前端使用原生 HTML/CSS/JS 编写为单文件，通过 Go embed 直接嵌入二进制，无需 Node.js 或任何前端构建工具。
@@ -144,6 +149,9 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 | GET | `/api/backup/list` | 备份列表 |
 | POST | `/api/backup/create` | 创建备份 |
 | POST | `/api/backup/restore` | 恢复备份 |
+| POST | `/api/backup/delete` | 删除备份 |
+| GET | `/api/panel-config` | 面板配置 |
+| PUT | `/api/panel-config` | 更新面板配置 |
 
 ## 注意事项
 
@@ -157,9 +165,7 @@ cp /opt/palworld/DefaultPalWorldSettings.ini /opt/palworld/Pal/Saved/Config/Linu
 - [ ] 支持多发行版一键安装脚本
 - [ ] 前端 i18n 国际化
 - [ ] 服务端崩溃自动拉起
-- [ ] 存档管理（已实现，未测试）
 - [ ] 管理面板登录认证
-- [ ] HTTPS 支持
 
 ## 许可
 
